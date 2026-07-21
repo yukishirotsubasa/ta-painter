@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { ChartContainer } from './components/chart/ChartContainer';
 import { IndicatorPanel } from './components/chart/IndicatorPanel';
 import './lib/chart/indicators/ma';
+import './lib/chart/indicators/bollinger';
+import './lib/chart/indicators/macd';
 import { getIndicator } from './lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorParamValues } from './lib/chart/indicators/types';
 import { TwseProvider } from './lib/data/providers/twseProvider';

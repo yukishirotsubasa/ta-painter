@@ -10,9 +10,16 @@
 ## ChartContainer 圖表配色寫死，未跟隨 light/dark 主題
 
 - **來源任務**：[chart1](task-pool/chart1.md) / [chart2](task-pool/chart2.md)
-- **狀況**：`web/src/index.css` 已用 `prefers-color-scheme` 定義 `--bg`/`--text`/`--border` 等 CSS variable 供 light/dark 兩套配色，但 `ChartContainer.tsx` 的 `createChart` 選項（`layout.textColor`、`grid` 線色）與量能柱 `UP_COLOR`/`DOWN_COLOR` 都是寫死的 hex 常數，不會隨系統主題切換。lightweight-charts 是 canvas 渲染，CSS variable 無法直接套用，需要 JS 端讀取目前主題再呼叫 `chart.applyOptions()`。
-- **影響**：目前介面沒有主題切換 UI，尚未有可觀察的視覺錯誤；但 responsive/RWD 模組（`responsive1`）或任何未來的主題切換功能上線後，圖表本身會維持深色配色不跟著換，造成視覺不一致。
-- **建議**：實作淺色主題支援時，改用 `window.matchMedia('(prefers-color-scheme: dark)')`（或未來的主題 state）在 `ChartContainer` 內動態算出色票，並在偵測到主題變化時呼叫 `chart.applyOptions({ layout, grid })` 更新，同時同步更新量能柱 `UP_COLOR`/`DOWN_COLOR`。
+- **狀況**：`web/src/index.css` 已用 `prefers-color-scheme` 定義 `--bg`/`--text`/`--border` 等 CSS variable 供 light/dark 兩套配色，但 `ChartContainer.tsx` 的 `createChart` 選項（`layout.textColor`、`grid` 線色）與量能柱 `UP_COLOR`/`DOWN_COLOR` 都是寫死的 hex 常數，不會隨系統主題切換。lightweight-charts 是 canvas 渲染，CSS variable 無法直接套用，需要 JS 端讀取目前主題再呼叫 `chart.applyOptions()`。[macd.ts](../web/src/lib/chart/indicators/macd.ts) 的 DIF/DEA 線色（`#2196f3`/`#ff9800`）與 histogram 的漲跌色（各自重複定義一份 `UP_COLOR`/`DOWN_COLOR`，數值跟 `ChartContainer.tsx` 相同但沒有共用常數）同樣是寫死 hex，屬同一類問題。
+- **影響**：目前介面沒有主題切換 UI，尚未有可觀察的視覺錯誤；但 responsive/RWD 模組（`responsive1`）或任何未來的主題切換功能上線後，圖表本身（含量能柱與 MACD histogram）會維持深色配色不跟著換，造成視覺不一致。另外 `ChartContainer.tsx` 與 `macd.ts` 各自定義一份相同數值的 `UP_COLOR`/`DOWN_COLOR`，未來調色只改一處會造成兩處不一致。
+- **建議**：實作淺色主題支援時，改用 `window.matchMedia('(prefers-color-scheme: dark)')`（或未來的主題 state）動態算出色票，並在偵測到主題變化時對圖表與各指標的 series 呼叫對應的 `applyOptions()`/重新 `setData()` 更新；同時把 `UP_COLOR`/`DOWN_COLOR` 抽成共用常數（例如 `lib/chart/colors.ts`），讓 `ChartContainer.tsx` 與 `macd.ts` 共用同一份。
+
+## PaneIndexAllocator 尚未驗證多個 separate-pane 指標同時存在的 index 一致性
+
+- **來源任務**：[indicator4](task-pool/indicator4.md)
+- **狀況**：`createPaneIndexAllocator()`（`lib/chart/paneIndexAllocator.ts`）只是邏輯上的計數器，並未對應 lightweight-charts 實際的 pane 陣列行為——當一個 pane 內最後一個 series 被移除時，lightweight-charts 會自動移除該 pane 並讓後面的 pane index 往前遞補，但 allocator 內部記錄的「已配置 index 集合」不會知道這件事。目前唯一的 separate-pane 指標是 MACD，已驗證「新增 → 移除 → 再新增」單一 MACD 實例時 pane index 分配正確（見 `docs/indicators.md` 手動驗證紀錄），但**尚未驗證兩個以上 separate-pane 指標同時存在、且移除中間那個時**，allocator 記錄的 index 是否仍對應 lightweight-charts 實際的 pane 陣列位置。
+- **影響**：目前規模下（只有 MACD 一種 separate-pane 指標）不會觸發這個情境，沒有可觀察的錯誤。但未來若新增第二種 separate-pane 指標（例如 RSI），使用者同時掛載兩個 separate-pane 指標後移除較前面那個，allocator 釋放的 index 可能與 lightweight-charts 實際遞補後的 pane 位置不一致，導致後續 `mount()`/`update()` 操作到錯誤的 pane。
+- **建議**：新增第二種 separate-pane 指標時，需實測「兩個 separate-pane 指標同時掛載 → 移除前面那個 → 檢查後面那個的 pane 是否還在正確位置」這個情境；若證實有錯位問題，需改為由 `ChartContainer` 直接查詢 `chart.panes()` 目前實際數量/位置來決定 index，而不是讓 allocator 自己維護獨立計數器。
 
 ## ~~vite 降版至 ^6.4.3~~（已解決：2026-07-21 升級回 vite@8）
 
