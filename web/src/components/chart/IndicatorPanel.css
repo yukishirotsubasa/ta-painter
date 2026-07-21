@@ -1,0 +1,75 @@
+.indicator-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.indicator-panel-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.indicator-panel-add button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.indicator-panel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.indicator-panel-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.indicator-panel-item-label {
+  font-family: var(--mono);
+  color: var(--text-h);
+}
+
+.indicator-panel-param {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+
+.indicator-panel-param input {
+  width: 56px;
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+
+.indicator-panel-remove {
+  font: inherit;
+  font-size: 12px;
+  color: #ef5350;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}

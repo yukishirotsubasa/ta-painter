@@ -8,16 +8,14 @@
 
 ```text
 chart3
-data4
-indicator1 -> indicator2
-indicator1 -> indicator3
-indicator1 -> indicator4
-indicator2 -> indicator5
+indicator3
+indicator4
+indicator5
 drawing1 -> drawing2 -> drawing3
 drawing2 -> drawing4
 infra2 -> data5
 infra2 -> data6 -> data7
-indicator1 -> share1 -> share2
+share1 -> share2
 drawing2 -> share3 -> share4
 share3 -> share5
 chart3 -> responsive1 -> responsive2
@@ -42,7 +40,7 @@ responsive1 -> responsive3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [data4](task-pool/data4.md) | 等待 | Medium | data3 | localStorage 快取（月粒度＋LRU），同區間重查時 Network 面板顯示無重複請求 |
+| [data4](task-pool/data4.md) | 完成 | Medium | data3 | localStorage 快取（月粒度＋LRU），同區間重查時 Network 面板顯示無重複請求 |
 | [data5](task-pool/data5.md) | 等待 | Medium | infra2, data1 | `TpexProvider`（走 Worker proxy），查詢上櫃代號取得正確資料 |
 | [data6](task-pool/data6.md) | 等待 | Medium | infra2, data1 | `YahooProvider`（走 Worker proxy），長區間一次查詢成功回傳完整資料 |
 | [data7](task-pool/data7.md) | 等待 | Low | data3, data6 | 自動選源／長區間切源提示 UI，觸發長區間查詢時顯示等待提示或一鍵切換 Yahoo |
@@ -61,11 +59,11 @@ responsive1 -> responsive3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [indicator1](task-pool/indicator1.md) | 等待 | High | chart1 | `IndicatorDefinition` 介面 + registry 架構，unit test 驗證 `compute()` 純函式輸出正確 |
-| [indicator2](task-pool/indicator2.md) | 等待 | High | indicator1 | MA 指標（overlay + 參數面板），畫面疊加 MA 線且數值比對正確，調參即時更新 |
+| [indicator1](task-pool/indicator1.md) | 完成 | High | chart1 | `IndicatorDefinition` 介面 + registry 架構，unit test 驗證 `compute()` 純函式輸出正確 |
+| [indicator2](task-pool/indicator2.md) | 完成 | High | indicator1 | MA 指標（overlay + 參數面板），畫面疊加 MA 線且數值比對正確，調參即時更新 |
 | [indicator3](task-pool/indicator3.md) | 等待 | Medium | indicator1 | 布林通道指標，三條線正確疊加且數值正確 |
 | [indicator4](task-pool/indicator4.md) | 等待 | Medium | indicator1 | MACD 指標（separate-pane），獨立 pane 正確顯示 DIF/DEA/histogram，移除後 pane 自動消失 |
-| [indicator5](task-pool/indicator5.md) | 等待 | Medium | indicator2, indicator3, indicator4 | 指標清單 UI（可新增/移除多個指標實例），可同時疊加多指標且互不影響 |
+| [indicator5](task-pool/indicator5.md) | 進行中 | Medium | indicator2, indicator3, indicator4 | 指標清單 UI（可新增/移除多個指標實例），可同時疊加多指標且互不影響 |
 
 ### drawing Module
 
@@ -111,9 +109,11 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 
 ## Planning Files
 
-- `design.md` — 專案整體設計文件（Context/技術棧/目錄結構/核心模組設計/待驗證項目）
+- `design.md` — 專案整體設計文件（Context/技術棧/目錄結構/核心模組設計/待驗證項目，屬**規劃**文件，不代表目前已實作狀態）
 - `technical-debt.md` — 已知技術債清單
 - `../docs/deployment.md` — 實際部署設定（GitHub Pages workflow、本機開發指令）
+- `../docs/data-layer.md` — 已實作資料層行為（provider registry、TwseProvider、逐月節流查詢、localStorage 快取）
+- `../docs/indicators.md` — 已實作指標架構（IndicatorDefinition/registry、MA 指標、指標清單 UI）
 
 ---
 

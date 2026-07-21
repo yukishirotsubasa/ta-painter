@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ChartContainer } from './components/chart/ChartContainer';
+import { IndicatorPanel } from './components/chart/IndicatorPanel';
+import './lib/chart/indicators/ma';
+import { getIndicator } from './lib/chart/indicators/registry';
+import type { IndicatorInstance, IndicatorParamValues } from './lib/chart/indicators/types';
 import { TwseProvider } from './lib/data/providers/twseProvider';
 import { fetchDailyRange } from './lib/data/throttle';
 import type { DateRange, FetchProgress, OhlcvBar } from './lib/data/types';
@@ -20,6 +24,23 @@ function App() {
   const [bars, setBars] = useState<OhlcvBar[]>([]);
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [indicators, setIndicators] = useState<IndicatorInstance[]>([]);
+
+  function addIndicator(definitionId: string) {
+    const definition = getIndicator(definitionId);
+    if (!definition) return;
+
+    const params = Object.fromEntries(definition.paramsSchema.map((schema) => [schema.key, schema.default]));
+    setIndicators((prev) => [...prev, { id: crypto.randomUUID(), definitionId, params }]);
+  }
+
+  function removeIndicator(instanceId: string) {
+    setIndicators((prev) => prev.filter((instance) => instance.id !== instanceId));
+  }
+
+  function updateIndicatorParams(instanceId: string, params: IndicatorParamValues) {
+    setIndicators((prev) => prev.map((instance) => (instance.id === instanceId ? { ...instance, params } : instance)));
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -51,7 +72,13 @@ function App() {
           </div>
         )}
       </header>
-      {error ? <p className="app-error">{error}</p> : <ChartContainer data={bars} />}
+      <IndicatorPanel
+        instances={indicators}
+        onAdd={addIndicator}
+        onRemove={removeIndicator}
+        onParamsChange={updateIndicatorParams}
+      />
+      {error ? <p className="app-error">{error}</p> : <ChartContainer data={bars} indicators={indicators} />}
     </div>
   );
 }

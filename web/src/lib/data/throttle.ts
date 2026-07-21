@@ -1,3 +1,4 @@
+import { getCachedMonth, setCachedMonth } from './cache';
 import type { DateRange, FetchProgressCallback, OhlcvBar, StockDataProvider } from './types';
 
 const MIN_INTERVAL_MS = 300;
@@ -48,17 +49,28 @@ function listMonths(range: DateRange): string[] {
   return months;
 }
 
-/** 單月查詢用的 DateRange，起訖月的頭尾裁切到整體查詢區間內。 */
-function monthRange(monthLabel: string, overallRange: DateRange): DateRange {
+/** 該月整月的 DateRange（不裁切），用於向 provider 查詢與寫入快取，確保快取內容為完整月份。 */
+function fullMonthRange(monthLabel: string): DateRange {
   const [year, month] = monthLabel.split('-').map(Number);
   const lastDay = new Date(year, month, 0).getDate();
-  const monthStart = `${monthLabel}-01`;
-  const monthEnd = `${monthLabel}-${String(lastDay).padStart(2, '0')}`;
+  return {
+    start: `${monthLabel}-01`,
+    end: `${monthLabel}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+/** 單月查詢用的 DateRange，起訖月的頭尾裁切到整體查詢區間內。 */
+function monthRange(monthLabel: string, overallRange: DateRange): DateRange {
+  const { start: monthStart, end: monthEnd } = fullMonthRange(monthLabel);
 
   return {
     start: monthStart > overallRange.start ? monthStart : overallRange.start,
     end: monthEnd < overallRange.end ? monthEnd : overallRange.end,
   };
+}
+
+function clipToRange(bars: OhlcvBar[], range: DateRange): OhlcvBar[] {
+  return bars.filter((bar) => bar.time >= range.start && bar.time <= range.end);
 }
 
 /**
@@ -81,12 +93,20 @@ export async function fetchDailyRange(
     }
 
     const monthLabel = months[index];
-    const monthBars = await provider.fetchDaily(stockNo, monthRange(monthLabel, range), undefined, signal);
-    bars.push(...monthBars);
+    const cached = getCachedMonth(provider.id, stockNo, monthLabel);
+
+    let monthBars: OhlcvBar[];
+    if (cached) {
+      monthBars = cached;
+    } else {
+      monthBars = await provider.fetchDaily(stockNo, fullMonthRange(monthLabel), undefined, signal);
+      setCachedMonth(provider.id, stockNo, monthLabel, monthBars);
+    }
+    bars.push(...clipToRange(monthBars, monthRange(monthLabel, range)));
 
     onProgress?.({ loaded: index + 1, total: months.length, message: `已載入 ${monthLabel}` });
 
-    if (index < months.length - 1) {
+    if (index < months.length - 1 && !cached) {
       await sleep(throttleDelayMs(), signal);
     }
   }
