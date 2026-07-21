@@ -44,7 +44,7 @@ responsive1 -> responsive3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [data1](task-pool/data1.md) | 等待 | High | infra1 | `OhlcvBar`/`StockDataProvider` 型別 + `providerRegistry`，TS 編譯通過 |
+| [data1](task-pool/data1.md) | 完成 | High | infra1 | `OhlcvBar`/`StockDataProvider` 型別 + `providerRegistry`，TS 編譯通過 |
 | [data2](task-pool/data2.md) | 等待 | High | data1 | `TwseProvider` 單月查詢，瀏覽器 console 呼叫取得資料，數字與 TWSE 官網頁面比對一致 |
 | [data3](task-pool/data3.md) | 等待 | Medium | data2 | 逐月請求佇列＋節流＋進度回報，查詢半年區間時 UI 進度正確跑完、月份無缺漏無重複 |
 | [data4](task-pool/data4.md) | 等待 | Medium | data3 | localStorage 快取（月粒度＋LRU），同區間重查時 Network 面板顯示無重複請求 |
