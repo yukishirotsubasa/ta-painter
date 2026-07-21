@@ -7,12 +7,12 @@
 ## Suggested Implementation Order
 
 ```text
-data1 -> data2 -> chart1 -> chart2
+chart1 -> chart2
 chart2 -> chart3 -> indicator1 -> indicator2
 indicator1 -> indicator3
 indicator1 -> indicator4
 indicator2 -> indicator5
-data2 -> data3 -> data4
+data3 -> data4
 infra2 -> data5
 infra2 -> data6
 data3 -> data6 -> data7

@@ -21,8 +21,10 @@ cd web
 npm install
 npm run dev      # http://localhost:5173/ta-painter/
 npm run build    # 產出 web/dist
+npm run test     # vitest run
+npm run lint     # oxlint
 ```
 
-## Node 版本相依限制
+## Node 版本需求
 
-`web/package.json` 將 `vite` 釘在 `^6.4.3`、`@vitejs/plugin-react` 釘在 `^4.7.0`（而非 scaffold 預設的 `vite@8` + rolldown）。原因見 [technical-debt.md](../project-planning/technical-debt.md)。
+本機 Node 需 `>=20.19.0`（`web/package.json` 依賴 `vite@^8.1.5` + rolldown 原生 binding，低版本 Node 會出現 `Cannot find native binding` 錯誤）。曾一度為繞過此問題暫時降版 `vite`/`@vitejs/plugin-react`，已於本機升級 Node 後恢復為 scaffold 預設版本，詳見 [technical-debt.md](../project-planning/technical-debt.md)。
