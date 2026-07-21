@@ -7,7 +7,7 @@
 ## Suggested Implementation Order
 
 ```text
-infra1 -> data1 -> data2 -> chart1 -> chart2
+data1 -> data2 -> chart1 -> chart2
 chart2 -> chart3 -> indicator1 -> indicator2
 indicator1 -> indicator3
 indicator1 -> indicator4
@@ -35,7 +35,7 @@ responsive1 -> responsive3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [infra1](task-pool/infra1.md) | 等待 | High | - | Vite+React+TS 專案骨架 + GitHub Actions 部署流程，產出可訪問的 GH Pages URL（空白頁但成功渲染） |
+| [infra1](task-pool/infra1.md) | 完成 | High | - | Vite+React+TS 專案骨架 + GitHub Actions 部署流程，產出可訪問的 GH Pages URL（空白頁但成功渲染） |
 | [infra2](task-pool/infra2.md) | 等待 | Medium | - | Cloudflare Worker CORS proxy 部署完成，`curl` 帶 Origin header 打 `/proxy/tpex`、`/proxy/yahoo` 均回應正確資料且含 CORS header |
 
 ### data Module
@@ -119,6 +119,8 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 ## Planning Files
 
 - `design.md` — 專案整體設計文件（Context/技術棧/目錄結構/核心模組設計/待驗證項目）
+- `technical-debt.md` — 已知技術債清單
+- `../docs/deployment.md` — 實際部署設定（GitHub Pages workflow、本機開發指令）
 
 ---
 
