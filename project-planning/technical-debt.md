@@ -1,5 +1,12 @@
 # Technical Debt
 
+## ChartContainer 圖表配色寫死，未跟隨 light/dark 主題
+
+- **來源任務**：[chart1](task-pool/chart1.md) / [chart2](task-pool/chart2.md)
+- **狀況**：`web/src/index.css` 已用 `prefers-color-scheme` 定義 `--bg`/`--text`/`--border` 等 CSS variable 供 light/dark 兩套配色，但 `ChartContainer.tsx` 的 `createChart` 選項（`layout.textColor`、`grid` 線色）與量能柱 `UP_COLOR`/`DOWN_COLOR` 都是寫死的 hex 常數，不會隨系統主題切換。lightweight-charts 是 canvas 渲染，CSS variable 無法直接套用，需要 JS 端讀取目前主題再呼叫 `chart.applyOptions()`。
+- **影響**：目前介面沒有主題切換 UI，尚未有可觀察的視覺錯誤；但 responsive/RWD 模組（`responsive1`）或任何未來的主題切換功能上線後，圖表本身會維持深色配色不跟著換，造成視覺不一致。
+- **建議**：實作淺色主題支援時，改用 `window.matchMedia('(prefers-color-scheme: dark)')`（或未來的主題 state）在 `ChartContainer` 內動態算出色票，並在偵測到主題變化時呼叫 `chart.applyOptions({ layout, grid })` 更新，同時同步更新量能柱 `UP_COLOR`/`DOWN_COLOR`。
+
 ## ~~vite 降版至 ^6.4.3~~（已解決：2026-07-21 升級回 vite@8）
 
 - **來源任務**：[infra1](task-pool/infra1.md)

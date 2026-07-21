@@ -7,17 +7,16 @@
 ## Suggested Implementation Order
 
 ```text
-chart1 -> chart2
-chart2 -> chart3 -> indicator1 -> indicator2
+chart3
+data4
+indicator1 -> indicator2
 indicator1 -> indicator3
 indicator1 -> indicator4
 indicator2 -> indicator5
-data3 -> data4
-infra2 -> data5
-infra2 -> data6
-data3 -> data6 -> data7
-chart1 -> drawing1 -> drawing2 -> drawing3
+drawing1 -> drawing2 -> drawing3
 drawing2 -> drawing4
+infra2 -> data5
+infra2 -> data6 -> data7
 indicator1 -> share1 -> share2
 drawing2 -> share3 -> share4
 share3 -> share5
@@ -35,7 +34,6 @@ responsive1 -> responsive3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [infra1](task-pool/infra1.md) | 完成 | High | - | Vite+React+TS 專案骨架 + GitHub Actions 部署流程，產出可訪問的 GH Pages URL（空白頁但成功渲染） |
 | [infra2](task-pool/infra2.md) | 等待 | Medium | - | Cloudflare Worker CORS proxy 部署完成，`curl` 帶 Origin header 打 `/proxy/tpex`、`/proxy/yahoo` 均回應正確資料且含 CORS header |
 
 ### data Module
@@ -44,9 +42,6 @@ responsive1 -> responsive3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [data1](task-pool/data1.md) | 完成 | High | infra1 | `OhlcvBar`/`StockDataProvider` 型別 + `providerRegistry`，TS 編譯通過 |
-| [data2](task-pool/data2.md) | 完成 | High | data1 | `TwseProvider` 單月查詢，瀏覽器 console 呼叫取得資料，數字與 TWSE 官網頁面比對一致 |
-| [data3](task-pool/data3.md) | 等待 | Medium | data2 | 逐月請求佇列＋節流＋進度回報，查詢半年區間時 UI 進度正確跑完、月份無缺漏無重複 |
 | [data4](task-pool/data4.md) | 等待 | Medium | data3 | localStorage 快取（月粒度＋LRU），同區間重查時 Network 面板顯示無重複請求 |
 | [data5](task-pool/data5.md) | 等待 | Medium | infra2, data1 | `TpexProvider`（走 Worker proxy），查詢上櫃代號取得正確資料 |
 | [data6](task-pool/data6.md) | 等待 | Medium | infra2, data1 | `YahooProvider`（走 Worker proxy），長區間一次查詢成功回傳完整資料 |
@@ -58,8 +53,6 @@ responsive1 -> responsive3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [chart1](task-pool/chart1.md) | 等待 | High | data2 | `ChartContainer` 初始化 + K 線 series，畫面顯示正確 K 線並與官網走勢比對一致 |
-| [chart2](task-pool/chart2.md) | 等待 | High | chart1 | 量能 histogram 子 pane，柱狀圖數值與官方資料一致 |
 | [chart3](task-pool/chart3.md) | 等待 | High | chart2 | `ChartToolbar` 股票代號輸入/切換，輸入不同代號能正確換圖 |
 
 ### indicator Module

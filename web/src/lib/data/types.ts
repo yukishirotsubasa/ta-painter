@@ -14,10 +14,11 @@ export interface DateRange {
   end: string;
 }
 
-/** 逐月/逐頁查詢進度，loaded/total 為已完成與總請求數（例如月數）。 */
+/** 逐月/逐頁查詢進度，loaded/total 為已完成與總請求數（例如月數），message 為人類可讀的目前狀態描述。 */
 export interface FetchProgress {
   loaded: number;
   total: number;
+  message?: string;
 }
 
 export type FetchProgressCallback = (progress: FetchProgress) => void;
