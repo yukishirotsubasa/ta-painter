@@ -66,7 +66,12 @@ function App() {
       <header className="app-header">
         <h1>TA Painter</h1>
         <span className="stock-no">{DEFAULT_STOCK_NO}</span>
-        <button type="button" aria-pressed={drawingMode} onClick={() => setDrawingMode((prev) => !prev)}>
+        <button
+          type="button"
+          className="drawing-toggle"
+          aria-pressed={drawingMode}
+          onClick={() => setDrawingMode((prev) => !prev)}
+        >
           {drawingMode ? '畫線模式：開' : '畫線模式：關'}
         </button>
         {progress && (

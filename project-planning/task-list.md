@@ -8,14 +8,14 @@
 
 ```text
 chart3
-drawing2 -> drawing3
-drawing2 -> drawing4
+drawing3
+drawing4
 drawing3 -> drawing5
 drawing4 -> drawing5
 infra2 -> data5
 infra2 -> data6 -> data7
 share1 -> share2
-drawing2 -> share3 -> share4
+share3 -> share4
 share3 -> share5
 chart3 -> responsive1 -> responsive2
 responsive1 -> responsive3
@@ -71,7 +71,7 @@ responsive1 -> responsive3
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
 | [drawing1](task-pool/drawing1.md) | 完成 | High | chart1 | `TrendLinePrimitive` 畫線互動 spike，改採按下拖曳（拖曳中即時預覽），桌面滑鼠與 pan/zoom 互斥已驗證可行，行動觸控驗證併入 drawing5 |
-| [drawing2](task-pool/drawing2.md) | 等待 | High | drawing1 | `DrawingController` 正式實作（按下拖曳，拖曳中即時預覽），縮放/resize 後線條不跑位（僅桌面，觸控見 drawing5） |
+| [drawing2](task-pool/drawing2.md) | 完成 | High | drawing1 | `DrawingController` 正式實作（按下拖曳，拖曳中即時預覽），縮放/resize 後線條不跑位（僅桌面，觸控見 drawing5） |
 | [drawing3](task-pool/drawing3.md) | 等待 | Medium | drawing2, chart3 | 切換股票自動清除畫線，切代號後線條消失（僅桌面，觸控見 drawing5） |
 | [drawing4](task-pool/drawing4.md) | 等待 | Low | drawing2 | 多條線管理＋刪除單條線功能（僅桌面，觸控見 drawing5） |
 | [drawing5](task-pool/drawing5.md) | 等待 | High | drawing2, drawing3, drawing4 | 行動觸控人工驗證（正式部署站台，待 drawing2/3/4 桌面完成並 push 到 main 後進行，一次性驗證並回報結果） |
@@ -114,7 +114,7 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 - `../docs/deployment.md` — 實際部署設定（GitHub Pages workflow、本機開發指令）
 - `../docs/data-layer.md` — 已實作資料層行為（provider registry、TwseProvider、逐月節流查詢、localStorage 快取）
 - `../docs/indicators.md` — 已實作指標架構（IndicatorDefinition/registry、MA/布林通道/MACD 指標、指標清單 UI）
-- `../docs/drawing.md` — 已實作畫線 spike（TrendLinePrimitive、按下拖曳 demo，正式 DrawingController 尚未實作）
+- `../docs/drawing.md` — 已實作畫線模組（TrendLinePrimitive、正式 DrawingController：模式切換、按下拖曳、多線陣列管理，切股清除/選取刪除單條線尚未實作）
 
 ---
 
