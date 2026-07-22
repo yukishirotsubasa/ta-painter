@@ -85,10 +85,17 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 
 ## MA 指標（`ma.ts`）
 
-- `id: 'ma'`，`placement: 'overlay'`，`paramsSchema` 只有一個 `period` 參數（預設 20，範圍 1–240）。
-- `compute(bars, params)`：對 `close` 算簡單移動平均。實作方式是對每個索引 `i >= period - 1` 取 `bars[i-period+1 ..= i]` 這個視窗算平均——**資料不足 period 天的時間點不會輸出資料點**（不是輸出 `NaN`），所以回傳陣列長度會比 `bars` 短。
-- `mount()`：`chart.addSeries(LineSeries, {}, 0)` 疊加在主圖 pane 0，`setData()` 直接放入 `compute()` 的結果。`update()`/`dispose()` 分別對應 `series.setData()` 重算與 `chart.removeSeries()`。
-- 數值正確性已用真實 TWSE 公開數字交叉驗證過（見 `ma.test.ts`，取自 `twseProvider.test.ts` 的 2330 真實收盤價算 MA5 比對）。
+- `id: 'ma'`，`placement: 'overlay'`，`paramsSchema` 三個參數：
+  - `period`（週期，number，預設 20，範圍 1–240）。
+  - `source`（計算來源，enum，預設 `close`）：`close`/`open`/`high`/`low`/`volume`，對應 `OhlcvBar` 的數值欄位，使 MA 可對成交量或任一價格欄位計算。
+  - `color`（線色，color，預設 `#2196f3`＝lightweight-charts `LineSeries` 的原生預設色）。
+- `compute(bars, params)`：對 `params.source` 指定的欄位算簡單移動平均（`resolveSource()` 讀取並驗證，非合法值回退 `close`）。實作方式是對每個索引 `i >= period - 1` 取 `bars[i-period+1 ..= i]` 這個視窗算平均——**資料不足 period 天的時間點不會輸出資料點**（不是輸出 `NaN`），所以回傳陣列長度會比 `bars` 短。
+- `mount()`：依 `source` 決定掛載的 pane——
+  - **價格類來源**（close/open/high/low）掛在主圖 pane 0，用預設 `price` 數字格式。
+  - **volume 來源**掛在量能 pane 1（`VOLUME_PANE_INDEX`），與量能柱共用同一個成交量 price scale 並用 `volume` 數字格式。這是必要的：volume 的 MA 數量級（十萬～百萬）遠大於股價，若仍疊在主圖 pane 0 會撐爆價格 scale 把 K 線壓成一條線；掛到量能 pane 後可直接與量能柱對照趨勢。pane 0/1 由 `ChartContainer` 的 `RESERVED_PANE_COUNT = 2` 保留，MA 直接引用這個約定的常數（不經 `paneIndexAllocator`，MA 仍是 overlay）。
+  - `addSeries()` 時套 `seriesOptionsForSource(source, color)`（`{ color, priceFormat }`）。`update()` 重新套用 color/priceFormat 與重算 `setData()`；若 `source` 在價格↔volume 之間切換導致目標 pane 改變，用 `series.getPane().paneIndex()` 比對後才呼叫 `series.moveToPane()`（相同 pane 不搬移）。`dispose()` 對應 `chart.removeSeries()`。
+- 多條 MA 各為獨立 `IndicatorInstance`，可各設不同 `period`/`source`/`color` 互不干擾。
+- 數值正確性已用真實 TWSE 公開數字交叉驗證過（見 `ma.test.ts`，取自 `twseProvider.test.ts` 的 2330 真實收盤價算 MA5 比對）；另有測試涵蓋 volume 來源計算、`source` 未知值回退 close、pane 配置（price→0、volume→1）與 source 切換時的 `moveToPane`、以及 `color` 套用（mount 與 update）。
 
 ## 布林通道指標（`bollinger.ts`）
 
@@ -111,7 +118,7 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 - Props：`instances`（目前所有 `IndicatorInstance`）、`onAdd(definitionId)`、`onRemove(instanceId)`、`onParamsChange(instanceId, params)`。
 - 上方列出 `listIndicators()` 回傳的每個指標定義的「+ 新增」按鈕；下方列出每個 `instance`，依 `definition.paramsSchema` 動態產生參數輸入元件，並有一個移除按鈕。
 - 每個參數的輸入元件由 `paramInput.ts` 的純函式 `resolveParamInput(schema, params)` 決定要渲染哪一種：`number` → `<input type="number">`、`enum` → `<select>`（選項來自 `schema.options`）、`color` → `<input type="color">`。輸入變動時以 `coerceParamValue(schema, raw)` 依型別把原始字串回寫成正確型別（`number` 型別化為數字，`enum`/`color` 保留 string）。渲染決策與型別轉換抽成純函式（不觸 DOM），以 `paramInput.test.ts` 用含 number/enum/color 三型別的測試 schema 單元驗證（本專案無 jsdom 測試環境）。
-- `types.ts` 另提供 `numberParam(params, key, fallback)` helper：讀取數值型參數並容忍以 string 儲存的數字（分享還原等情境），缺值/空字串/非數字時回退 `fallback`。`ma.ts`/`bollinger.ts`/`macd.ts` 的 `compute()` 均改用它讀週期等數值參數，行為不變。
+- `types.ts` 另提供兩個讀參數 helper：`numberParam(params, key, fallback)` 讀數值型參數並容忍以 string 儲存的數字（分享還原等情境），缺值/空字串/非數字時回退 `fallback`；`stringParam(params, key, fallback)` 讀字串型（enum/color）參數，非字串或空字串時回退 `fallback`。`ma.ts`/`bollinger.ts`/`macd.ts` 的 `compute()` 用 `numberParam` 讀週期等數值參數；`ma.ts` 用 `stringParam` 讀 `source`/`color`。
 
 實際狀態管理與 chart 掛載邏輯在別處：
 
@@ -138,5 +145,5 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 
 ## 已知限制 / 尚未實作
 
-- 因為 sandbox 網路限制，MA／布林通道／MACD 疊加到圖表上的**視覺效果**未經肉眼確認，只驗證過互動邏輯（見上）與 `compute()` 數值正確性。
+- 因為 sandbox 網路限制，MA／布林通道／MACD 疊加到圖表上的**視覺效果**未經肉眼確認，只驗證過互動邏輯（見上）與 `compute()` 數值正確性。MA 的 `source`/`color`/pane 配置（含 volume 掛到量能 pane、source 切換時 `moveToPane`）亦僅以 fake-chart 單元測試驗證契約，未經真實瀏覽器肉眼確認渲染效果。
 - `PaneIndexAllocator` 尚未驗證「多個 separate-pane 指標同時存在」的情境（見上方章節說明），因為目前只有 MACD 一種 separate-pane 指標。

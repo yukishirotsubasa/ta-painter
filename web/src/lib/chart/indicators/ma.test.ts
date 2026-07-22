@@ -63,4 +63,145 @@ describe('MaIndicator', () => {
 
     expect(MaIndicator.compute(bars, {})).toHaveLength(1);
   });
+
+  it('computes on the field named by params.source (volume) instead of close', () => {
+    const bars: OhlcvBar[] = [
+      { time: '2024-01-01', open: 1, high: 1, low: 1, close: 1, volume: 100 },
+      { time: '2024-01-02', open: 2, high: 2, low: 2, close: 2, volume: 200 },
+      { time: '2024-01-03', open: 3, high: 3, low: 3, close: 3, volume: 300 },
+    ];
+
+    expect(MaIndicator.compute(bars, { period: 3, source: 'volume' })).toEqual([
+      { time: '2024-01-03', value: 200 },
+    ]);
+  });
+
+  it('matches the close result when source is close (default equivalence)', () => {
+    const bars = [bar('2024-01-01', 10), bar('2024-01-02', 12), bar('2024-01-03', 14)];
+
+    const withSource = MaIndicator.compute(bars, { period: 3, source: 'close' });
+    const withoutSource = MaIndicator.compute(bars, { period: 3 });
+
+    expect(withSource).toEqual(withoutSource);
+  });
+
+  it('falls back to close when params.source is an unknown value', () => {
+    const bars: OhlcvBar[] = [
+      { time: '2024-01-01', open: 9, high: 9, low: 9, close: 1, volume: 100 },
+      { time: '2024-01-02', open: 9, high: 9, low: 9, close: 3, volume: 200 },
+    ];
+
+    expect(MaIndicator.compute(bars, { period: 2, source: 'bogus' })).toEqual([
+      { time: '2024-01-02', value: 2 },
+    ]);
+  });
+
+  it('exposes source enum and color params in its schema', () => {
+    const keys = MaIndicator.paramsSchema.map((s) => s.key);
+    expect(keys).toEqual(['period', 'source', 'color']);
+
+    const source = MaIndicator.paramsSchema.find((s) => s.key === 'source');
+    expect(source?.type).toBe('enum');
+    expect(source && 'options' in source && source.options.map((o) => o.value)).toEqual([
+      'close',
+      'open',
+      'high',
+      'low',
+      'volume',
+    ]);
+
+    const color = MaIndicator.paramsSchema.find((s) => s.key === 'color');
+    expect(color?.type).toBe('color');
+  });
+
+  interface FakeChart {
+    chart: unknown;
+    allocator: { allocate: () => number; release: () => void };
+    addOptions: () => Record<string, unknown> | undefined;
+    addPane: () => number | undefined;
+    applied: Array<Record<string, unknown>>;
+    currentPane: () => number;
+  }
+
+  function fakeChart(): FakeChart {
+    let paneIndex = 0;
+    let addOptions: Record<string, unknown> | undefined;
+    let addPane: number | undefined;
+    const applied: Array<Record<string, unknown>> = [];
+    const line = {
+      setData: () => {},
+      applyOptions: (opts: Record<string, unknown>) => applied.push(opts),
+      getPane: () => ({ paneIndex: () => paneIndex }),
+      moveToPane: (target: number) => {
+        paneIndex = target;
+      },
+    };
+    const chart = {
+      addSeries: (_series: unknown, options: Record<string, unknown>, pane: number) => {
+        addOptions = options;
+        addPane = pane;
+        paneIndex = pane;
+        return line;
+      },
+      removeSeries: () => {},
+    };
+    return {
+      chart,
+      allocator: { allocate: () => 2, release: () => {} },
+      addOptions: () => addOptions,
+      addPane: () => addPane,
+      applied,
+      currentPane: () => paneIndex,
+    };
+  }
+
+  it('applies params.color to the line series on mount and on update', () => {
+    const fake = fakeChart();
+    const bars = [bar('2024-01-01', 10), bar('2024-01-02', 12)];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handle = MaIndicator.mount(fake.chart as any, fake.allocator, bars, { period: 2, color: '#ff0000' });
+    expect(fake.addOptions()?.color).toBe('#ff0000');
+
+    handle.update(bars, { period: 2, color: '#00ff00' });
+    expect(fake.applied.at(-1)?.color).toBe('#00ff00');
+  });
+
+  it('mounts a price-source MA on the main pane (0) with price format', () => {
+    const fake = fakeChart();
+    const bars = [bar('2024-01-01', 10), bar('2024-01-02', 12)];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    MaIndicator.mount(fake.chart as any, fake.allocator, bars, { period: 2, source: 'close' });
+
+    expect(fake.addPane()).toBe(0);
+    expect(fake.addOptions()?.priceFormat).toEqual({ type: 'price' });
+  });
+
+  it('mounts a volume-source MA on the volume pane (1) with volume format', () => {
+    const fake = fakeChart();
+    const bars = [bar('2024-01-01', 10), bar('2024-01-02', 12)];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    MaIndicator.mount(fake.chart as any, fake.allocator, bars, { period: 2, source: 'volume' });
+
+    expect(fake.addPane()).toBe(1);
+    expect(fake.addOptions()?.priceFormat).toEqual({ type: 'volume' });
+  });
+
+  it('moves the series between panes when source switches between price and volume', () => {
+    const fake = fakeChart();
+    const bars = [bar('2024-01-01', 10), bar('2024-01-02', 12)];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handle = MaIndicator.mount(fake.chart as any, fake.allocator, bars, { period: 2, source: 'close' });
+    expect(fake.currentPane()).toBe(0);
+
+    handle.update(bars, { period: 2, source: 'volume' });
+    expect(fake.currentPane()).toBe(1);
+    expect(fake.applied.at(-1)?.priceFormat).toEqual({ type: 'volume' });
+
+    handle.update(bars, { period: 2, source: 'close' });
+    expect(fake.currentPane()).toBe(0);
+  });
 });

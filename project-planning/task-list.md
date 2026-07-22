@@ -7,7 +7,7 @@
 ## Suggested Implementation Order
 
 ```text
-indicator7 -> indicator8
+indicator8
 drawing6 -> drawing7 -> share1 -> share2
 symbol1 -> symbol2 -> data7 -> sidebar1 -> sidebar2
 sidebar3 -> responsive1 -> responsive2 -> responsive3
@@ -57,7 +57,7 @@ ci1 -> ci2 -> ci3
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
 | [indicator6](task-pool/indicator6.md) | 完成 | High | - | 參數 schema 型別化（`type: number\|enum\|color`），`IndicatorParamValues` 改 `Record<string,number\|string>`，`IndicatorPanel` 依型別渲染 number/select/color；不改既有指標行為 |
-| [indicator7](task-pool/indicator7.md) | 等待 | Medium | indicator6 | MA 加 `source`（close/open/high/low/volume，可對 volume 計算）與 `color`，`computeMa` 依 source 取值、mount 讀色 |
+| [indicator7](task-pool/indicator7.md) | 完成 | Medium | indicator6 | MA 加 `source`（close/open/high/low/volume，可對 volume 計算）與 `color`，`computeMa` 依 source 取值、mount 讀色 |
 | [indicator8](task-pool/indicator8.md) | 等待 | Low | indicator6 | 布林/MACD/量能柱顏色可調；抽出共用 `lib/chart/colors.ts`，`ChartContainer` 與 `macd.ts` 共用同一份 |
 
 ### drawing Module

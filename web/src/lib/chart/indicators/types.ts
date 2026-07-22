@@ -51,6 +51,12 @@ export function numberParam(params: IndicatorParamValues, key: string, fallback:
   return Number.isNaN(value) ? fallback : value;
 }
 
+/** 讀取字串型參數（enum/color）並回退預設值。 */
+export function stringParam(params: IndicatorParamValues, key: string, fallback: string): string {
+  const raw = params[key];
+  return typeof raw === 'string' && raw !== '' ? raw : fallback;
+}
+
 /** 使用者已加入的一個指標實例（同一 definition 可有多個實例，如 MA5 + MA20）。 */
 export interface IndicatorInstance {
   id: string;

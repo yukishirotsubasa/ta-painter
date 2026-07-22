@@ -80,6 +80,14 @@
 - **建議**：加一個簡單的排程（例如 GitHub Actions cron）定期 curl 這兩個 proxy 端點（TPEx 個股、Yahoo `.TW`/`.TWO`），失敗時發通知，及早發現上游規則變動，而非等使用者回報。
 - **對應任務**：[ci3](task-pool/ci3.md)。
 
+## MA volume 來源的 pane index 在 `ma.ts` 硬編，與 `ChartContainer` 的 pane 佈局約定重複
+
+- **來源任務**：[indicator7](task-pool/indicator7.md)（2026-07-23）
+- **狀況**：`ma.ts` 為了讓 `source=volume` 的 MA 掛到量能 pane，直接寫死 `PRICE_PANE_INDEX = 0` / `VOLUME_PANE_INDEX = 1` 兩個常數。這份「pane 0=K 線、pane 1=量能」的知識實際上由 `ChartContainer.tsx` 擁有（`RESERVED_PANE_COUNT = 2` 與建立 candlestick/volume series 的順序決定），`ma.ts` 只是複製了同一份約定，兩邊沒有共用來源。這是刻意的簡化：MA 是 overlay 不走 `paneIndexAllocator`，而 allocator 目前也沒有「查詢保留 pane 語意」的 API。
+- **影響**：目前 pane 佈局固定，沒有可觀察問題。但若未來 `ChartContainer` 調整保留 pane 的數量或順序（例如把量能改成可關閉、或在 K 線與量能之間插入其他 reserved pane），`ma.ts` 的 `VOLUME_PANE_INDEX = 1` 會靜默指向錯誤的 pane（volume MA 掛錯位置或撐爆別的 scale），且 TypeScript 無法在編譯期攔到。
+- **建議**：把「保留 pane 的語意 → index」對應集中到單一來源，例如在 `paneIndexAllocator`（或新的 `lib/chart/panes.ts`）曝光 `PRICE_PANE_INDEX`/`VOLUME_PANE_INDEX` 具名常數，讓 `ChartContainer` 與 `ma.ts` 共同引用；或由 `mount()` 透過參數把量能 pane index 傳進來，而非在指標檔案內硬編。
+- **對應任務**：暫無（defer，pane 佈局變動時一併處理）。
+
 ## ~~三來源成交量口徑不一致（Yahoo 略低）~~（決策：不處理，2026-07-22）
 
 - **來源任務**：[data6](task-pool/data6.md)
