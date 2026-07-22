@@ -20,7 +20,7 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
   detached(): void;
   setPoints(points: [TrendLinePoint, TrendLinePoint] | null): void;
   setSelected(selected: boolean): void;
-  hitTest(x: number, y: number): boolean;
+  hitTest(x: number, y: number): PrimitiveHoveredItem | null;
   updateAllViews(): void;
   paneViews(): readonly IPrimitivePaneView[];
 }
@@ -30,7 +30,7 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
 - `TrendLinePaneRenderer.draw()` 用 `target.useBitmapCoordinateSpace()` + `ctx.scale(horizontalPixelRatio, verticalPixelRatio)` 畫線，顏色 `#f5a623`、寬度 2px（`selected` 為 `true` 時寬度變 3px，並在兩端畫半徑 4px 的實心圓把手，作為選取視覺提示）。
 - 純渲染邏輯，跟互動方式（拖曳）無關，只負責依 `points`/`selected` 畫線。
 - 每條線各自是獨立的 `TrendLinePrimitive` 實例，由 `DrawingController` 建立、`attachPrimitive()`/`detachPrimitive()` 掛載與卸載。
-- `hitTest(x, y)`（drawing4）：把 `points` 換算成 pixel 座標後，計算 `(x, y)` 到線段的最短距離，容許誤差 `HIT_TEST_TOLERANCE_PX = 6`px 內視為命中，供 `DrawingController` 做點擊選取判定。實測發現此容差偏小、實際點擊常常落空，已記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條) 待後續優化。
+- `hitTest(x, y)`（drawing4）：把 `points` 換算成 pixel 座標後，計算 `(x, y)` 到線段的最短距離，容許誤差 `HIT_TEST_TOLERANCE_PX = 6`px 內視為命中，供 `DrawingController` 做點擊選取判定。回傳型別依 `lightweight-charts@5.2.0` 的 `ISeriesPrimitiveBase` 介面必須是 `PrimitiveHoveredItem | null`（非單純 `boolean`）：命中回傳 `{ cursorStyle: 'pointer', externalId: 'trend-line', zOrder: 'normal' }`，未命中回傳 `null`；`DrawingController.hitTestLines()` 用 `!== null` 判斷是否命中。實測發現此容差偏小、實際點擊常常落空，已記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條) 待後續優化。
 
 ## `DrawingController`（`lib/chart/drawing/drawingController.ts`）
 

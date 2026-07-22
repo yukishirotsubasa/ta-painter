@@ -77,7 +77,6 @@ function createFakeContainer() {
 }
 
 function drawOneLine(
-  controller: DrawingController,
   container: ReturnType<typeof createFakeContainer>,
   fireCrosshairMove: (param: MouseEventParams<Time>) => void,
   fakeWindow: ReturnType<typeof createFakeEventTarget>,
@@ -106,8 +105,8 @@ describe('DrawingController.clearAll', () => {
     const controller = new DrawingController({ chart, series, container });
 
     controller.setEnabled(true);
-    drawOneLine(controller, container, fireCrosshairMove, fakeWindow);
-    drawOneLine(controller, container, fireCrosshairMove, fakeWindow);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
 
     expect(series.attachPrimitive).toHaveBeenCalledTimes(2);
     expect(series.detachPrimitive).not.toHaveBeenCalled();
@@ -124,7 +123,7 @@ describe('DrawingController.clearAll', () => {
     const controller = new DrawingController({ chart, series, container });
 
     controller.setEnabled(true);
-    drawOneLine(controller, container, fireCrosshairMove, fakeWindow);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
     controller.clearAll();
     expect(series.detachPrimitive).toHaveBeenCalledTimes(1);
 
@@ -172,7 +171,7 @@ describe('DrawingController selection & delete (drawing4)', () => {
 
     controller.setEnabled(true);
     // 第一條線：pixel (10,10) -> (50,60)
-    drawOneLine(controller, container, fireCrosshairMove, fakeWindow);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
     // 第二條線：pixel (100,10) -> (150,60)
     container.dispatch('mousedown', { clientX: 100, clientY: 10 });
     fireCrosshairMove({ point: { x: 150, y: 60 }, time: 150 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
@@ -195,7 +194,7 @@ describe('DrawingController selection & delete (drawing4)', () => {
     const controller = new DrawingController({ chart, series, container });
 
     controller.setEnabled(true);
-    drawOneLine(controller, container, fireCrosshairMove, fakeWindow);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
 
     click(container, 30, 35); // 選取
     click(container, 700, 500); // 點空白處，清除選取
@@ -212,7 +211,7 @@ describe('DrawingController selection & delete (drawing4)', () => {
     const controller = new DrawingController({ chart, series, container });
 
     controller.setEnabled(true);
-    drawOneLine(controller, container, fireCrosshairMove, fakeWindow);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
     click(container, 30, 35); // 選取第一條線
 
     // 在別處拖出第二條線，不應影響第一條線的選取或內容。

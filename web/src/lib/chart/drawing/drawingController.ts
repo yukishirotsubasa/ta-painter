@@ -114,7 +114,7 @@ export class DrawingController {
   /** 由後往前找，命中最上層（最後畫的）那條線，找不到回傳 null。 */
   private hitTestLines(x: number, y: number): TrendLinePrimitive | null {
     for (let i = this.lines.length - 1; i >= 0; i--) {
-      if (this.lines[i].hitTest(x, y)) return this.lines[i];
+      if (this.lines[i].hitTest(x, y) !== null) return this.lines[i];
     }
     return null;
   }

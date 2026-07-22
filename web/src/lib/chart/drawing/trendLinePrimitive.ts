@@ -5,6 +5,7 @@ import type {
   IPrimitivePaneView,
   ISeriesApi,
   ISeriesPrimitive,
+  PrimitiveHoveredItem,
   SeriesAttachedParameter,
   SeriesType,
   Time,
@@ -159,12 +160,13 @@ export class TrendLinePrimitive implements ISeriesPrimitive<Time> {
   }
 
   /** 判斷像素座標 (x, y) 是否落在線段附近（容許誤差 `HIT_TEST_TOLERANCE_PX`），供點擊選取使用。 */
-  hitTest(x: number, y: number): boolean {
-    if (!this.chart || !this.series || !this.points) return false;
+  hitTest(x: number, y: number): PrimitiveHoveredItem | null {
+    if (!this.chart || !this.series || !this.points) return null;
     const p1 = toPixelPoint(this.chart, this.series, this.points[0]);
     const p2 = toPixelPoint(this.chart, this.series, this.points[1]);
-    if (!p1 || !p2) return false;
-    return distanceToSegment(x, y, p1, p2) <= HIT_TEST_TOLERANCE_PX;
+    if (!p1 || !p2) return null;
+    if (distanceToSegment(x, y, p1, p2) > HIT_TEST_TOLERANCE_PX) return null;
+    return { cursorStyle: 'pointer', externalId: 'trend-line', zOrder: 'normal' };
   }
 
   updateAllViews(): void {

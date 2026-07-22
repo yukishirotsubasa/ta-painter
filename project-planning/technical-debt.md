@@ -38,6 +38,13 @@
   2. 在此之上疊加 hover 預覽：`onCrosshairMove` 目前只在 `dragging` 時處理，其實未按下滑鼠移動也會持續觸發 `subscribeCrosshairMove`，可以在未拖曳時也做 hit-test，滑到線附近就即時提示（游標變 `pointer`、線條 hover 高亮），讓使用者點擊前就知道會選到哪條。
   3. 另一個評估過但改動範圍明顯較大的方向：另外做一個「已畫線條清單」UI 面板，列出每條線並附刪除按鈕，完全不需要在畫布上精準點選；但需要把 `DrawingController` 內部的 `lines` 陣列曝光成可被 React 觀察（目前是純 imperative 黑盒、沒有任何回調），超出當初 drawing4 的 scope。
 
+## 沒有本機 pre-commit/CI type-check，`main` 曾出現能過 test 但過不了 `tsc -b` 的 commit
+
+- **來源任務**：[drawing4](task-pool/drawing4.md)（修正於本次 session，2026-07-22）
+- **狀況**：drawing4 完成時（commit `9016432`）`TrendLinePrimitive.hitTest()` 回傳 `boolean`，但專案實裝的 `lightweight-charts@5.2.0` 型別要求 `ISeriesPrimitiveBase.hitTest` 回傳 `PrimitiveHoveredItem | null`。`npm test`（vitest）當時全數通過（測試只驗證行為，不跑型別檢查），但這個型別錯誤直到 push 後才被 GitHub Actions 的 `npm run build`（`tsc -b && vite build`，見 `.github/workflows/deploy-pages.yml`）攔下，導致部署失敗。本地沒有任何 pre-commit hook 或本機 CI 腳本會在 commit 前跑 `tsc -b`。已於本次 session 修正（`hitTest` 改回傳 `PrimitiveHoveredItem | null`，命中回傳 `{ cursorStyle: 'pointer', externalId: 'trend-line', zOrder: 'normal' }`，未命中回傳 `null`；`DrawingController.hitTestLines()` 改用 `!== null` 判斷），詳見 [`docs/drawing.md`](../docs/drawing.md)。
+- **影響**：目前僅發生一次（型別錯誤，非邏輯錯誤，實際互動行為不受影響），但這個落差模式（本機只跑 `npm test` 就 commit，未跑 `npm run build`）未來仍可能重演，尤其是升級第三方套件版本（如 lightweight-charts）後型別介面變動時最容易中招，且要等 push 後才會在 CI 發現，拖慢回饋速度。
+- **建議**：養成 commit/push 前跑一次 `npm run build`（或至少 `tsc -b`）的習慣；若要根治，可考慮加 Husky pre-commit hook 跑 `tsc -b`，或在 `deploy-pages.yml` 之外另建一個「PR/push 到非 main 分支」也會跑 `npm run build` 的 CI workflow，讓型別錯誤在合併前就被攔下而非等到部署才發現。
+
 ## ~~vite 降版至 ^6.4.3~~（已解決：2026-07-21 升級回 vite@8）
 
 - **來源任務**：[infra1](task-pool/infra1.md)
