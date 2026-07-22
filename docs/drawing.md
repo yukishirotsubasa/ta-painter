@@ -1,6 +1,6 @@
 # 手動畫線（`web/src/lib/chart/drawing/`、`components/chart/ChartContainer.tsx`）
 
-> 本文件記錄**已實作**的畫線模組：`TrendLinePrimitive` 渲染機制（drawing1）+ 正式的 `DrawingController`（drawing2，模式切換、事件處理、多線陣列管理）。切股清除（drawing3）與選取刪除單條線（drawing4）尚未實作。整體規劃見 `project-planning/design.md`。
+> 本文件記錄**已實作**的畫線模組：`TrendLinePrimitive` 渲染機制（drawing1）+ 正式的 `DrawingController`（drawing2，模式切換、事件處理、多線陣列管理）+ 切換股票自動清除畫線（drawing3）。選取刪除單條線（drawing4）尚未實作。整體規劃見 `project-planning/design.md`。
 
 ## `TrendLinePrimitive`（`lib/chart/drawing/trendLinePrimitive.ts`）
 
@@ -59,7 +59,8 @@ class DrawingController {
 
 ### 線條管理與清除
 
-- `clearAll()`：捨棄未定案的 `activeLine`（如有），遍歷 `lines` 陣列逐一 `series.detachPrimitive()` 並清空陣列。供未來 drawing3（切換股票時呼叫）使用，`DrawingController` 本身不會自動呼叫。
+- `clearAll()`：捨棄未定案的 `activeLine`（如有），遍歷 `lines` 陣列逐一 `series.detachPrimitive()` 並清空陣列。純記憶體狀態，不持久化，`detachPrimitive()` 是真的卸載而非隱藏，切回原本股票代號不會「復原」畫線。
+- **切股清除（drawing3）**：`ChartContainer.tsx` 新增 `stockNo` prop，`useEffect(() => { drawingControllerRef.current?.clearAll(); }, [stockNo])` 在 `stockNo` 變動時呼叫 `clearAll()`；`App.tsx` 把 `stockNo` state 往下傳。因為 effect 依賴 `[stockNo]`，首次掛載時也會呼叫一次（此時 `lines` 本來就是空陣列，無副作用）。
 - `dispose()`：`setEnabled(false)` + `clearAll()`，供 `ChartContainer` 卸載時呼叫，確保元件重建/卸載不殘留 primitive 或事件監聽器。
 - 目前尚未實作「選取某條線並刪除」的互動（見 [drawing4](../project-planning/task-pool/drawing4.md)）。
 
@@ -70,7 +71,7 @@ class DrawingController {
 
 ## 手動驗證紀錄
 
-因 sandbox 網路限制與 Claude Code Browser 預覽面板本身的截圖/canvas resize 異常（環境限制，非本專案程式碼問題，drawing1 與 drawing2 兩次驗證都遇到同一個限制：canvas backing store 卡在預設 300×150、`computer` 的 `screenshot` 動作持續 timeout），核心互動邏輯改用 `javascript_tool` 對真實 `IChartApi`/`ISeriesApi` 實例做白盒驗證（seed 合成 K 線資料，因無法連外抓 TWSE 真實資料）：
+因 sandbox 網路限制與 Claude Code Browser 預覽面板本身的截圖/canvas resize 異常（環境限制，非本專案程式碼問題，drawing1、drawing2、drawing3 三次驗證都遇到同一個限制：`document.visibilityState` 卡在 `"hidden"`，導致 canvas backing store 卡在預設 300×150、`computer` 的 `screenshot`/`zoom`/`left_click_drag` 動作持續 timeout；換分頁、重啟 preview server 皆無法排除），核心互動邏輯改用 `javascript_tool` 對真實 `IChartApi`/`ISeriesApi` 實例做白盒驗證（seed 合成 K 線資料，因無法連外抓 TWSE 真實資料）：
 
 - 按下（`mousedown`）正確用 `coordinateToTime`/`coordinateToPrice` 算出起點 time/price，此時尚未建立 primitive。
 - 拖曳中（`mousemove` + `buttons:1` 觸發 `subscribeCrosshairMove`）第一次移動即建立並 `attachPrimitive`，之後每次移動 `points` 的終點正確跟著更新，全程無 console error。
@@ -81,8 +82,10 @@ class DrawingController {
 
 使用者另外在自己的真實瀏覽器（非本機沙盒環境）手動測試並確認：K 線／成交量／價格軸／指標按鈕正常渲染，canvas resize 正常；拖曳畫出的趨勢線顏色（`#f5a623`）、走向與拖曳軌跡一致；縮放圖表（zoom in/out）與改變視窗大小（resize）後線條仍正確錨定原本時間/價格位置；桌面滑鼠拖曳（按下→拖曳預覽→放開定案）操作流程正確無誤。
 
+**drawing3（切股清除）**：本節開頭所述的 Browser pane 限制第三次出現（drawing1、drawing2 之後），改用 `web/src/lib/chart/drawing/drawingController.test.ts` 的 unit test 驗證 `clearAll()` 行為——用 fake chart/series/container/window（不依賴真實 DOM/canvas）模擬完整拖曳畫線流程：畫兩條線後呼叫 `clearAll()`，驗證 `series.detachPrimitive()` 被呼叫兩次（線條真的被卸載）；再次呼叫 `clearAll()` 驗證不會重複 detach（陣列確實清空，不是隱藏）。`ChartContainer` 內 `stockNo` -> `clearAll()` 的 wiring 本身未經瀏覽器實測，僅靠程式碼比對既有 `drawingMode` effect 的相同模式（`useEffect(fn, [dep])` 呼叫 controller 方法）人工審閱確認正確。
+
 ## 已知限制 / 尚未實作
 
 - **行動觸控**：拖曳建立起點的邏輯（`touchstart`）不依賴庫內部事件轉換，風險較低；但「拖曳中 `subscribeCrosshairMove` 對 `touchmove` 的即時反應」尚未實測。集中驗證見 [drawing5](../project-planning/task-pool/drawing5.md)，須在正式部署站台上進行。
-- **切股清除**：`DrawingController.clearAll()` 已實作，但目前沒有任何呼叫端在切換股票代號時觸發它；見 [drawing3](../project-planning/task-pool/drawing3.md)。
 - **選取刪除單條線**：目前只能整批 `clearAll()`，無法選取/刪除單一條線；見 [drawing4](../project-planning/task-pool/drawing4.md)。
+- **切股清除的瀏覽器實測**：`ChartContainer` 內 `stockNo` 變動觸發 `clearAll()` 的 wiring 尚未在真實瀏覽器中實際畫線＋切股驗證過（受限於本節開頭所述的 Browser pane 環境限制），僅有 `drawingController.test.ts` 的邏輯層驗證 + 程式碼審閱。建議下次有能正常截圖的環境時補做一次真人瀏覽器手動驗證。

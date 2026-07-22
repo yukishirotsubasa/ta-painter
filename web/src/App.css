@@ -25,11 +25,6 @@ body,
   margin: 0;
 }
 
-.stock-no {
-  font-family: var(--mono);
-  color: var(--text);
-}
-
 .drawing-toggle {
   font: inherit;
   font-size: 13px;

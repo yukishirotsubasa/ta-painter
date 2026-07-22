@@ -20,6 +20,8 @@ interface ChartContainerProps {
   indicators?: IndicatorInstance[];
   /** 開啟時關閉原生 pan/zoom，按下拖曳畫趨勢線（拖曳中即時預覽，放開定案）。 */
   drawingMode?: boolean;
+  /** 股票代號，變更時清空目前所有畫線（drawing3）。 */
+  stockNo?: string;
 }
 
 /** pane 0 = K 線、pane 1 = 量能，指標的 separate-pane 配置從 pane 2 開始。 */
@@ -49,7 +51,7 @@ function toVolumeData(bars: OhlcvBar[]): HistogramData[] {
   }));
 }
 
-export function ChartContainer({ data, indicators = [], drawingMode = false }: ChartContainerProps) {
+export function ChartContainer({ data, indicators = [], drawingMode = false, stockNo }: ChartContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -147,6 +149,10 @@ export function ChartContainer({ data, indicators = [], drawingMode = false }: C
   useEffect(() => {
     drawingControllerRef.current?.setEnabled(drawingMode);
   }, [drawingMode]);
+
+  useEffect(() => {
+    drawingControllerRef.current?.clearAll();
+  }, [stockNo]);
 
   return <div ref={containerRef} className={`chart-container${drawingMode ? ' chart-container-drawing' : ''}`} />;
 }

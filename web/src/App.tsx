@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ChartContainer } from './components/chart/ChartContainer';
+import { ChartToolbar } from './components/chart/ChartToolbar';
 import { IndicatorPanel } from './components/chart/IndicatorPanel';
 import './lib/chart/indicators/ma';
 import './lib/chart/indicators/bollinger';
@@ -23,6 +24,7 @@ function lastMonthsRange(months: number): DateRange {
 }
 
 function App() {
+  const [stockNo, setStockNo] = useState(DEFAULT_STOCK_NO);
   const [bars, setBars] = useState<OhlcvBar[]>([]);
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,22 +52,23 @@ function App() {
     setError(null);
     setProgress({ loaded: 0, total: QUERY_MONTHS });
 
-    fetchDailyRange(TwseProvider, DEFAULT_STOCK_NO, lastMonthsRange(QUERY_MONTHS), setProgress, controller.signal)
+    fetchDailyRange(TwseProvider, stockNo, lastMonthsRange(QUERY_MONTHS), setProgress, controller.signal)
       .then(setBars)
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') return;
+        setBars([]);
         setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => setProgress(null));
 
     return () => controller.abort();
-  }, []);
+  }, [stockNo]);
 
   return (
     <div className="app">
       <header className="app-header">
         <h1>TA Painter</h1>
-        <span className="stock-no">{DEFAULT_STOCK_NO}</span>
+        <ChartToolbar stockNo={stockNo} loading={progress !== null} onSubmit={setStockNo} />
         <button
           type="button"
           className="drawing-toggle"
@@ -92,7 +95,7 @@ function App() {
       {error ? (
         <p className="app-error">{error}</p>
       ) : (
-        <ChartContainer data={bars} indicators={indicators} drawingMode={drawingMode} />
+        <ChartContainer data={bars} indicators={indicators} drawingMode={drawingMode} stockNo={stockNo} />
       )}
     </div>
   );
