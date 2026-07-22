@@ -1,6 +1,6 @@
 # 手動畫線（`web/src/lib/chart/drawing/`、`components/chart/ChartContainer.tsx`）
 
-> 本文件記錄**已實作**的畫線模組：`TrendLinePrimitive` 渲染機制（drawing1）+ 正式的 `DrawingController`（drawing2，模式切換、事件處理、多線陣列管理）+ 切換股票自動清除畫線（drawing3）。選取刪除單條線（drawing4）尚未實作。整體規劃見 `project-planning/design.md`。
+> 本文件記錄**已實作**的畫線模組：`TrendLinePrimitive` 渲染機制（drawing1）+ 正式的 `DrawingController`（drawing2，模式切換、事件處理、多線陣列管理）+ 切換股票自動清除畫線（drawing3）+ 選取刪除單條線（drawing4）。整體規劃見 `project-planning/design.md`。
 
 ## `TrendLinePrimitive`（`lib/chart/drawing/trendLinePrimitive.ts`）
 
@@ -14,19 +14,23 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
   chart: IChartApi | null;
   series: ISeriesApi<SeriesType, Time> | null;
   points: [TrendLinePoint, TrendLinePoint] | null;
+  selected: boolean;
 
   attached(param: SeriesAttachedParameter<Time>): void;
   detached(): void;
   setPoints(points: [TrendLinePoint, TrendLinePoint] | null): void;
+  setSelected(selected: boolean): void;
+  hitTest(x: number, y: number): boolean;
   updateAllViews(): void;
   paneViews(): readonly IPrimitivePaneView[];
 }
 ```
 
 - 座標存邏輯座標 `{ time, price }` 而非 pixel。`TrendLinePaneView.update()`（`updateAllViews()` 觸發，庫在 viewport 變動時會自動呼叫）用 `chart.timeScale().timeToCoordinate()` + `series.priceToCoordinate()` 即時換算成 pixel 座標，確保縮放/resize/pan 後線條不跑位。
-- `TrendLinePaneRenderer.draw()` 用 `target.useBitmapCoordinateSpace()` + `ctx.scale(horizontalPixelRatio, verticalPixelRatio)` 畫線，顏色 `#f5a623`、寬度 2px。
-- 純渲染邏輯，跟互動方式（拖曳）無關，只負責依 `points` 畫線。
+- `TrendLinePaneRenderer.draw()` 用 `target.useBitmapCoordinateSpace()` + `ctx.scale(horizontalPixelRatio, verticalPixelRatio)` 畫線，顏色 `#f5a623`、寬度 2px（`selected` 為 `true` 時寬度變 3px，並在兩端畫半徑 4px 的實心圓把手，作為選取視覺提示）。
+- 純渲染邏輯，跟互動方式（拖曳）無關，只負責依 `points`/`selected` 畫線。
 - 每條線各自是獨立的 `TrendLinePrimitive` 實例，由 `DrawingController` 建立、`attachPrimitive()`/`detachPrimitive()` 掛載與卸載。
+- `hitTest(x, y)`（drawing4）：把 `points` 換算成 pixel 座標後，計算 `(x, y)` 到線段的最短距離，容許誤差 `HIT_TEST_TOLERANCE_PX = 6`px 內視為命中，供 `DrawingController` 做點擊選取判定。實測發現此容差偏小、實際點擊常常落空，已記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條) 待後續優化。
 
 ## `DrawingController`（`lib/chart/drawing/drawingController.ts`）
 
@@ -55,14 +59,22 @@ class DrawingController {
 - **拖曳中**：`subscribeCrosshairMove` 取得即時座標，只要處於拖曳狀態就持續更新終點畫出預覽線（第一次移動時才真正 `new TrendLinePrimitive()` + `attachPrimitive()`，存在 `activeLine`，尚未進入 `lines` 陣列）。
 - **放開**：`mouseup`（掛在 `window`，避免放開時游標已離開 canvas 而漏接）/`touchend`/`touchcancel` 把 `activeLine` push 進內部 `lines: TrendLinePrimitive[]` 陣列並清空 `activeLine`/`anchor`/`dragging`，該線的 `points` 維持在放開當下的座標不再更新。**每次完整拖曳都會產生一條新線**，不會覆蓋先前已定案的線（drawing1 spike 版本用單一 `trendLineRef` 會互相覆蓋，drawing2 已改為陣列管理）。
 - 另掛一個 `touchmove` 監聽器（`{ passive: false }`），僅在拖曳中呼叫 `preventDefault()`，避免瀏覽器原生觸控捲動搶走拖曳手勢。
-- **關閉（`setEnabled(false)`）**：`handleScroll`/`handleScale` 恢復為 `true`，unsubscribe 所有監聽器；若關閉當下有未定案的拖曳中的線（`activeLine`）會被捨棄（`detachPrimitive` + 不 push 進陣列），已定案的線（`lines` 陣列內）不受影響、畫面上維持顯示。
+- **關閉（`setEnabled(false)`）**：`handleScroll`/`handleScale` 恢復為 `true`，unsubscribe 所有監聽器（含 drawing4 新增的 `keydown`）；若關閉當下有未定案的拖曳中的線（`activeLine`）會被捨棄（`detachPrimitive` + 不 push 進陣列），已定案的線（`lines` 陣列內）不受影響、畫面上維持顯示；同時清除目前的選取狀態（見下）。
+
+### 選取與刪除單條線（drawing4）
+
+純粹靠既有的按下拖曳事件（`mousedown`/`touchstart` → `mouseup`/`touchend`）判斷，沒有新增額外的滑鼠事件監聽器，也沒有曝光任何新的公開 API（`DrawingController` 對外介面維持 `isEnabled`/`setEnabled`/`clearAll`/`dispose` 不變，選取狀態純粹是內部私有欄位）：
+
+- **點擊命中判定**：`mousedown`/`touchstart` 當下先用 `hitTestLines(x, y)` 對 `lines` 陣列由後往前找第一條 `TrendLinePrimitive.hitTest(x, y)` 命中的線（`hitTest` 容許誤差 6px，見上一節），存成 `pendingSelection` 候選，此時**還不會**真的選取。
+- **放開時判定是拖曳還是點擊**：`endDrag()` 若 `activeLine` 有值（代表這次真的拖出了一條新線），則維持原本的選取狀態不變、捨棄 `pendingSelection`；若 `activeLine` 為空（純點擊、沒有真的拖曳），才呼叫 `setSelectedLine(pendingSelection)`——命中線就選取該線，點空白處（`pendingSelection` 為 `null`）則清除目前選取。
+- **選取視覺**：`setSelectedLine()` 對舊選取線呼叫 `setSelected(false)`、新選取線呼叫 `setSelected(true)`，觸發 `TrendLinePrimitive` 重繪成加粗＋端點把手樣式（見上一節）。
+- **刪除**：`setEnabled(true)` 時額外在 `window` 掛 `keydown` 監聽器；有選取中的線時按下 `Delete` 或 `Backspace`（`event.preventDefault()`）呼叫 `deleteSelectedLine()`——用 `lines.indexOf()` 找到該線在陣列中的位置 `splice` 移除，並 `series.detachPrimitive()` 卸載，只影響選取的那一條，其餘線不受影響。
 
 ### 線條管理與清除
 
-- `clearAll()`：捨棄未定案的 `activeLine`（如有），遍歷 `lines` 陣列逐一 `series.detachPrimitive()` 並清空陣列。純記憶體狀態，不持久化，`detachPrimitive()` 是真的卸載而非隱藏，切回原本股票代號不會「復原」畫線。
+- `clearAll()`：捨棄未定案的 `activeLine`（如有），遍歷 `lines` 陣列逐一 `series.detachPrimitive()` 並清空陣列，同時清空選取狀態（`selectedLine = null`，因為原本選取的線可能已被 detach）。純記憶體狀態，不持久化，`detachPrimitive()` 是真的卸載而非隱藏，切回原本股票代號不會「復原」畫線。
 - **切股清除（drawing3）**：`ChartContainer.tsx` 新增 `stockNo` prop，`useEffect(() => { drawingControllerRef.current?.clearAll(); }, [stockNo])` 在 `stockNo` 變動時呼叫 `clearAll()`；`App.tsx` 把 `stockNo` state 往下傳。因為 effect 依賴 `[stockNo]`，首次掛載時也會呼叫一次（此時 `lines` 本來就是空陣列，無副作用）。
 - `dispose()`：`setEnabled(false)` + `clearAll()`，供 `ChartContainer` 卸載時呼叫，確保元件重建/卸載不殘留 primitive 或事件監聽器。
-- 目前尚未實作「選取某條線並刪除」的互動（見 [drawing4](../project-planning/task-pool/drawing4.md)）。
 
 ### 畫線模式視覺提示
 
@@ -84,8 +96,10 @@ class DrawingController {
 
 **drawing3（切股清除）**：本節開頭所述的 Browser pane 限制第三次出現（drawing1、drawing2 之後），改用 `web/src/lib/chart/drawing/drawingController.test.ts` 的 unit test 驗證 `clearAll()` 行為——用 fake chart/series/container/window（不依賴真實 DOM/canvas）模擬完整拖曳畫線流程：畫兩條線後呼叫 `clearAll()`，驗證 `series.detachPrimitive()` 被呼叫兩次（線條真的被卸載）；再次呼叫 `clearAll()` 驗證不會重複 detach（陣列確實清空，不是隱藏）。`ChartContainer` 內 `stockNo` -> `clearAll()` 的 wiring 本身未經瀏覽器實測，僅靠程式碼比對既有 `drawingMode` effect 的相同模式（`useEffect(fn, [dep])` 呼叫 controller 方法）人工審閱確認正確。
 
+**drawing4（選取刪除單條線）**：延續 drawing3 的作法，改用 `drawingController.test.ts` 的 unit test 驗證（同一份 Browser pane 環境限制持續存在）。這次額外讓 fake series 的 `attachPrimitive`/`detachPrimitive` 真的呼叫 primitive 的 `attached()`/`detached()`（比照真實 lightweight-charts 庫的行為），讓 `TrendLinePrimitive.hitTest()` 依賴的 `chart`/`series` 欄位在測試中也會被正確設定；並在 `timeScale()`/`series` 的 fake 補上 `timeToCoordinate`/`priceToCoordinate`（互為 `coordinateToTime`/`coordinateToPrice` 的反函式），讓命中判定用的像素座標換算與畫線時一致。涵蓋情境：純點擊（無拖曳）不會誤建新線；點選其中一條線按 `Delete` 只刪那條、`series.detachPrimitive()` 呼叫對象正確；點空白處清除選取，此時按 `Delete` 無作用；選取一條線後在別處拖出新線，原本的選取與按鍵刪除仍正確作用在原本那條線上。使用者之後在自己的真實瀏覽器手動測試確認：刪除單條線功能可正常運作，但線條容許誤差（6px）偏小、實際點擊常落空，已記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條) 待後續優化。
+
 ## 已知限制 / 尚未實作
 
-- **行動觸控**：拖曳建立起點的邏輯（`touchstart`）不依賴庫內部事件轉換，風險較低；但「拖曳中 `subscribeCrosshairMove` 對 `touchmove` 的即時反應」尚未實測。集中驗證見 [drawing5](../project-planning/task-pool/drawing5.md)，須在正式部署站台上進行。
-- **選取刪除單條線**：目前只能整批 `clearAll()`，無法選取/刪除單一條線；見 [drawing4](../project-planning/task-pool/drawing4.md)。
+- **行動觸控**：拖曳建立起點的邏輯（`touchstart`）不依賴庫內部事件轉換，風險較低；但「拖曳中 `subscribeCrosshairMove` 對 `touchmove` 的即時反應」與「點擊選取（drawing4）在觸控上的手感」尚未實測。集中驗證見 [drawing5](../project-planning/task-pool/drawing5.md)，須在正式部署站台上進行。
+- **選取的點擊命中容差偏小**：目前 `HIT_TEST_TOLERANCE_PX = 6`px，真實瀏覽器實測反映難以點中線條；改善方向見 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條)。
 - **切股清除的瀏覽器實測**：`ChartContainer` 內 `stockNo` 變動觸發 `clearAll()` 的 wiring 尚未在真實瀏覽器中實際畫線＋切股驗證過（受限於本節開頭所述的 Browser pane 環境限制），僅有 `drawingController.test.ts` 的邏輯層驗證 + 程式碼審閱。建議下次有能正常截圖的環境時補做一次真人瀏覽器手動驗證。

@@ -14,7 +14,7 @@ const MAIN_PANE_INDEX = 0;
  * 畫線模式的事件處理與線條管理（drawing1 spike 的正式版）。
  * 按下拖曳互動：mousedown/touchstart 記錄起點，subscribeCrosshairMove 拖曳中即時預覽，
  * mouseup/touchend/touchcancel 放開定案。每次完整拖曳都會產生一條新線並存進陣列，
- * 供 clearAll()（drawing3 切股清除）與多線管理（drawing4）使用。
+ * 供 clearAll()（drawing3 切股清除）與多線管理／選取刪除（drawing4）使用。
  */
 export class DrawingController {
   private readonly chart: IChartApi;
@@ -27,6 +27,10 @@ export class DrawingController {
   private dragging = false;
   private enabled = false;
 
+  /** mousedown/touchstart 當下命中的線（若有），放開時若沒發生拖曳才會真的變成選取。 */
+  private pendingSelection: TrendLinePrimitive | null = null;
+  private selectedLine: TrendLinePrimitive | null = null;
+
   constructor(options: DrawingControllerOptions) {
     this.chart = options.chart;
     this.series = options.series;
@@ -37,6 +41,7 @@ export class DrawingController {
     this.onTouchMove = this.onTouchMove.bind(this);
     this.endDrag = this.endDrag.bind(this);
     this.onCrosshairMove = this.onCrosshairMove.bind(this);
+    this.onKeyDown = this.onKeyDown.bind(this);
   }
 
   isEnabled(): boolean {
@@ -57,15 +62,18 @@ export class DrawingController {
       this.container.addEventListener('touchend', this.endDrag);
       this.container.addEventListener('touchcancel', this.endDrag);
       window.addEventListener('mouseup', this.endDrag);
+      window.addEventListener('keydown', this.onKeyDown);
       this.chart.subscribeCrosshairMove(this.onCrosshairMove);
     } else {
       this.discardActiveLine();
+      this.setSelectedLine(null);
       this.container.removeEventListener('mousedown', this.onMouseDown);
       this.container.removeEventListener('touchstart', this.onTouchStart);
       this.container.removeEventListener('touchmove', this.onTouchMove);
       this.container.removeEventListener('touchend', this.endDrag);
       this.container.removeEventListener('touchcancel', this.endDrag);
       window.removeEventListener('mouseup', this.endDrag);
+      window.removeEventListener('keydown', this.onKeyDown);
       this.chart.unsubscribeCrosshairMove(this.onCrosshairMove);
     }
   }
@@ -77,6 +85,7 @@ export class DrawingController {
       this.series.detachPrimitive(line);
     }
     this.lines.length = 0;
+    this.selectedLine = null;
   }
 
   dispose(): void {
@@ -84,10 +93,13 @@ export class DrawingController {
     this.clearAll();
   }
 
-  private pointFromClientXY(clientX: number, clientY: number): TrendLinePoint | null {
+  private relativeXY(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.container.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  private pointFromClientXY(clientX: number, clientY: number): TrendLinePoint | null {
+    const { x, y } = this.relativeXY(clientX, clientY);
 
     const mainPaneHeight = this.chart.panes()[MAIN_PANE_INDEX]?.getHeight();
     if (mainPaneHeight !== undefined && y > mainPaneHeight) return null;
@@ -97,6 +109,30 @@ export class DrawingController {
     const price = this.series.coordinateToPrice(y);
     if (price === null) return null;
     return { time, price };
+  }
+
+  /** 由後往前找，命中最上層（最後畫的）那條線，找不到回傳 null。 */
+  private hitTestLines(x: number, y: number): TrendLinePrimitive | null {
+    for (let i = this.lines.length - 1; i >= 0; i--) {
+      if (this.lines[i].hitTest(x, y)) return this.lines[i];
+    }
+    return null;
+  }
+
+  private setSelectedLine(line: TrendLinePrimitive | null): void {
+    if (this.selectedLine === line) return;
+    this.selectedLine?.setSelected(false);
+    this.selectedLine = line;
+    this.selectedLine?.setSelected(true);
+  }
+
+  /** 刪除目前選取的線（Delete/Backspace 觸發），只從陣列移除該條，其餘線不受影響。 */
+  private deleteSelectedLine(): void {
+    if (!this.selectedLine) return;
+    const index = this.lines.indexOf(this.selectedLine);
+    if (index !== -1) this.lines.splice(index, 1);
+    this.series.detachPrimitive(this.selectedLine);
+    this.selectedLine = null;
   }
 
   private discardActiveLine(): void {
@@ -117,24 +153,41 @@ export class DrawingController {
 
   private endDrag(): void {
     if (this.activeLine) {
+      // 真的拖出了一條新線：放棄本次的選取候選，維持原本選取狀態不變。
       this.lines.push(this.activeLine);
+    } else {
+      // 純點擊（未拖曳）：命中線條就選取，點空白處則清除選取。
+      this.setSelectedLine(this.pendingSelection);
     }
     this.activeLine = null;
     this.dragging = false;
     this.anchor = null;
+    this.pendingSelection = null;
   }
 
   private onMouseDown(event: MouseEvent): void {
+    const { x, y } = this.relativeXY(event.clientX, event.clientY);
+    this.pendingSelection = this.hitTestLines(x, y);
     this.beginDrag(event.clientX, event.clientY);
   }
 
   private onTouchStart(event: TouchEvent): void {
     const touch = event.touches[0];
-    if (touch) this.beginDrag(touch.clientX, touch.clientY);
+    if (!touch) return;
+    const { x, y } = this.relativeXY(touch.clientX, touch.clientY);
+    this.pendingSelection = this.hitTestLines(x, y);
+    this.beginDrag(touch.clientX, touch.clientY);
   }
 
   private onTouchMove(event: TouchEvent): void {
     if (this.dragging) event.preventDefault();
+  }
+
+  private onKeyDown(event: KeyboardEvent): void {
+    if (!this.selectedLine) return;
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+    event.preventDefault();
+    this.deleteSelectedLine();
   }
 
   private onCrosshairMove(param: MouseEventParams<Time>): void {
