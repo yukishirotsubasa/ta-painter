@@ -59,7 +59,7 @@ D:\code\TA Painter\
 
 **指標可擴充架構**：`IndicatorDefinition`（`compute()` 純函式算數值、`mount()` 負責掛到 chart 的 series/pane）+ `registry.ts` 動態註冊表，UI 的指標清單與參數表單完全從 registry 動態產生，新增指標只需新增一個檔案註冊，不改 UI 元件。MA/布林通道用 overlay（掛主圖 pane 0），MACD 用 separate-pane（動態分配 paneIndex，指標移除時歸還）。
 
-**手動畫線**：用 lightweight-charts v5 的 Series Primitives（`ISeriesPrimitive`/`IPanePrimitive`）實作 `TrendLinePrimitive`，座標存邏輯座標（time+price）而非 pixel，`draw()` 內即時轉換確保縮放/resize 不跑位。畫線模式與原生 pan/zoom 互斥（開啟時關閉 `handleScroll`/`handleScale`），桌面與行動統一採「點兩下決定兩端點」互動模式（比拖曳更省事、更適配觸控精度）。切換股票時 `DrawingController.clearAll()` 清空記憶體中的線條陣列，不持久化。
+**手動畫線**：用 lightweight-charts v5 的 Series Primitives（`ISeriesPrimitive`/`IPanePrimitive`）實作 `TrendLinePrimitive`，座標存邏輯座標（time+price）而非 pixel，`draw()` 內即時轉換確保縮放/resize 不跑位。畫線模式與原生 pan/zoom 互斥（開啟時關閉 `handleScroll`/`handleScale`），桌面與行動統一採**按下拖曳**互動模式：按下（mousedown/touchstart）記錄起點，拖曳中即時更新終點畫出預覽線（`primitive.setPoints()` 隨拖曳持續更新），放開（mouseup/touchend）定案。因 chart API 沒有「按下」事件可訂閱，起點座標改用 `chart.timeScale().coordinateToTime(x)` + `series.coordinateToPrice(y)` 自行換算，拖曳中則用 `subscribeCrosshairMove` 取得即時座標。切換股票時 `DrawingController.clearAll()` 清空記憶體中的線條陣列，不持久化。
 
 **URL 分享**：`ShareState`（含版本欄位）序列化 symbol、已選指標+非預設參數、畫線座標，用 `lz-string` 壓縮進 URL hash（用 hash 而非 query string，避免 GH Pages 靜態託管對 query 的潛在 rewrite 問題）。載入時解析 hash 還原完整畫面；使用者操作時用 `history.replaceState` 同步更新，不塞爆瀏覽器歷史記錄。
 

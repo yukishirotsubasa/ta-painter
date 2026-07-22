@@ -27,6 +27,7 @@ function App() {
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [indicators, setIndicators] = useState<IndicatorInstance[]>([]);
+  const [drawingMode, setDrawingMode] = useState(false);
 
   function addIndicator(definitionId: string) {
     const definition = getIndicator(definitionId);
@@ -65,6 +66,9 @@ function App() {
       <header className="app-header">
         <h1>TA Painter</h1>
         <span className="stock-no">{DEFAULT_STOCK_NO}</span>
+        <button type="button" aria-pressed={drawingMode} onClick={() => setDrawingMode((prev) => !prev)}>
+          {drawingMode ? '畫線模式：開' : '畫線模式：關'}
+        </button>
         {progress && (
           <div className="progress" role="progressbar" aria-valuenow={progress.loaded} aria-valuemax={progress.total}>
             <div className="progress-bar" style={{ width: `${(progress.loaded / progress.total) * 100}%` }} />
@@ -80,7 +84,11 @@ function App() {
         onRemove={removeIndicator}
         onParamsChange={updateIndicatorParams}
       />
-      {error ? <p className="app-error">{error}</p> : <ChartContainer data={bars} indicators={indicators} />}
+      {error ? (
+        <p className="app-error">{error}</p>
+      ) : (
+        <ChartContainer data={bars} indicators={indicators} drawingMode={drawingMode} />
+      )}
     </div>
   );
 }
