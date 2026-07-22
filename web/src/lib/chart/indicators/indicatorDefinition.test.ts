@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OhlcvBar } from '../../data/types';
-import type { IndicatorDefinition, IndicatorParamValues } from './types';
+import { numberParam, type IndicatorDefinition, type IndicatorParamValues } from './types';
 
 /** Mock 指標：對 close 取最近 params.period 天的平均值，純粹依 bars/params 計算，無外部狀態。 */
 const MockAverageIndicator: IndicatorDefinition<number[]> = {
@@ -9,7 +9,7 @@ const MockAverageIndicator: IndicatorDefinition<number[]> = {
   placement: 'overlay',
   paramsSchema: [{ key: 'period', label: 'Period', default: 3 }],
   compute(bars: OhlcvBar[], params: IndicatorParamValues): number[] {
-    const period = params.period;
+    const period = numberParam(params, 'period', 1);
     return bars.map((_, index) => {
       const window = bars.slice(Math.max(0, index - period + 1), index + 1);
       return window.reduce((sum, bar) => sum + bar.close, 0) / window.length;

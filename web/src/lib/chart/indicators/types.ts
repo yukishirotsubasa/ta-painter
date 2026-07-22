@@ -1,17 +1,55 @@
 import type { IChartApi } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
 
-/** 目前僅支援數值型參數（週期、標準差倍數等），UI 依此動態產生數字輸入欄位。 */
-export interface IndicatorParamSchema {
+/** enum 參數的單一可選項（value 存進 params，label 顯示於 UI）。 */
+export interface IndicatorParamOption {
+  value: string;
+  label: string;
+}
+
+interface BaseParamSchema {
   key: string;
   label: string;
+}
+
+/** 數值型參數（週期、標準差倍數等）；`type` 省略時視為 'number'，維持既有指標寫法相容。 */
+export interface NumberParamSchema extends BaseParamSchema {
+  type?: 'number';
   default: number;
   min?: number;
   max?: number;
   step?: number;
 }
 
-export type IndicatorParamValues = Record<string, number>;
+/** 列舉型參數，UI 以 select 呈現；值為 options 之一的 value（string）。 */
+export interface EnumParamSchema extends BaseParamSchema {
+  type: 'enum';
+  default: string;
+  options: IndicatorParamOption[];
+}
+
+/** 顏色型參數，UI 以 color picker 呈現；值為 `#rrggbb` 字串。 */
+export interface ColorParamSchema extends BaseParamSchema {
+  type: 'color';
+  default: string;
+}
+
+/**
+ * 指標參數 schema：以 `type` 區分渲染方式（number/enum/color）。
+ * `type` 省略等同 'number'，故既有純數值指標定義無需改動。
+ */
+export type IndicatorParamSchema = NumberParamSchema | EnumParamSchema | ColorParamSchema;
+
+/** 參數值：number（數值型）或 string（enum/color）。 */
+export type IndicatorParamValues = Record<string, number | string>;
+
+/** 讀取數值型參數並回退預設值，容忍以 string 儲存的數字（分享還原等情境）。 */
+export function numberParam(params: IndicatorParamValues, key: string, fallback: number): number {
+  const raw = params[key];
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const value = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isNaN(value) ? fallback : value;
+}
 
 /** 使用者已加入的一個指標實例（同一 definition 可有多個實例，如 MA5 + MA20）。 */
 export interface IndicatorInstance {

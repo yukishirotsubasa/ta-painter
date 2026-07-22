@@ -1,7 +1,13 @@
 import { LineSeries, type IChartApi, type ISeriesApi, type LineData } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
 import { registerIndicator } from './registry';
-import type { IndicatorDefinition, IndicatorMountHandle, IndicatorParamValues, PaneIndexAllocator } from './types';
+import {
+  numberParam,
+  type IndicatorDefinition,
+  type IndicatorMountHandle,
+  type IndicatorParamValues,
+  type PaneIndexAllocator,
+} from './types';
 
 const DEFAULT_PERIOD = 20;
 const DEFAULT_STD_DEV_MULTIPLIER = 2;
@@ -18,8 +24,8 @@ export interface BollingerPoint {
  * 資料不足 period 天的時間點不輸出（無值可算），與 MA 指標一致。
  */
 function computeBollinger(bars: OhlcvBar[], params: IndicatorParamValues): BollingerPoint[] {
-  const period = Math.max(1, Math.round(params.period ?? DEFAULT_PERIOD));
-  const multiplier = params.stdDevMultiplier ?? DEFAULT_STD_DEV_MULTIPLIER;
+  const period = Math.max(1, Math.round(numberParam(params, 'period', DEFAULT_PERIOD)));
+  const multiplier = numberParam(params, 'stdDevMultiplier', DEFAULT_STD_DEV_MULTIPLIER);
   const points: BollingerPoint[] = [];
 
   for (let i = period - 1; i < bars.length; i += 1) {

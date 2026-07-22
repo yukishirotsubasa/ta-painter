@@ -8,7 +8,13 @@ import {
 } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
 import { registerIndicator } from './registry';
-import type { IndicatorDefinition, IndicatorMountHandle, IndicatorParamValues, PaneIndexAllocator } from './types';
+import {
+  numberParam,
+  type IndicatorDefinition,
+  type IndicatorMountHandle,
+  type IndicatorParamValues,
+  type PaneIndexAllocator,
+} from './types';
 
 const DEFAULT_FAST_PERIOD = 12;
 const DEFAULT_SLOW_PERIOD = 26;
@@ -47,9 +53,9 @@ function computeEmaSeries(values: number[], period: number): number[] {
  * 資料不足以算出完整 DIF/DEA/histogram 的時間點不輸出（與 MA/布林通道一致）。
  */
 function computeMacd(bars: OhlcvBar[], params: IndicatorParamValues): MacdPoint[] {
-  const fastPeriod = Math.max(1, Math.round(params.fastPeriod ?? DEFAULT_FAST_PERIOD));
-  const slowPeriod = Math.max(1, Math.round(params.slowPeriod ?? DEFAULT_SLOW_PERIOD));
-  const signalPeriod = Math.max(1, Math.round(params.signalPeriod ?? DEFAULT_SIGNAL_PERIOD));
+  const fastPeriod = Math.max(1, Math.round(numberParam(params, 'fastPeriod', DEFAULT_FAST_PERIOD)));
+  const slowPeriod = Math.max(1, Math.round(numberParam(params, 'slowPeriod', DEFAULT_SLOW_PERIOD)));
+  const signalPeriod = Math.max(1, Math.round(numberParam(params, 'signalPeriod', DEFAULT_SIGNAL_PERIOD)));
 
   const closes = bars.map((bar) => bar.close);
   const fastEma = computeEmaSeries(closes, fastPeriod);

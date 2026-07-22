@@ -1,7 +1,13 @@
 import { LineSeries, type IChartApi, type ISeriesApi, type LineData } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
 import { registerIndicator } from './registry';
-import type { IndicatorDefinition, IndicatorMountHandle, IndicatorParamValues, PaneIndexAllocator } from './types';
+import {
+  numberParam,
+  type IndicatorDefinition,
+  type IndicatorMountHandle,
+  type IndicatorParamValues,
+  type PaneIndexAllocator,
+} from './types';
 
 const DEFAULT_PERIOD = 20;
 
@@ -12,7 +18,7 @@ export interface MaPoint {
 
 /** 對 close 計算週期為 params.period 的簡單移動平均；資料不足 period 天的時間點不輸出（無值可算）。 */
 function computeMa(bars: OhlcvBar[], params: IndicatorParamValues): MaPoint[] {
-  const period = Math.max(1, Math.round(params.period ?? DEFAULT_PERIOD));
+  const period = Math.max(1, Math.round(numberParam(params, 'period', DEFAULT_PERIOD)));
   const points: MaPoint[] = [];
 
   for (let i = period - 1; i < bars.length; i += 1) {

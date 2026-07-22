@@ -1,5 +1,10 @@
+import { coerceParamValue, resolveParamInput } from '../../lib/chart/indicators/paramInput';
 import { getIndicator, listIndicators } from '../../lib/chart/indicators/registry';
-import type { IndicatorInstance, IndicatorParamValues } from '../../lib/chart/indicators/types';
+import type {
+  IndicatorInstance,
+  IndicatorParamSchema,
+  IndicatorParamValues,
+} from '../../lib/chart/indicators/types';
 import './IndicatorPanel.css';
 
 interface IndicatorPanelProps {
@@ -34,17 +39,11 @@ export function IndicatorPanel({ instances, onAdd, onRemove, onParamsChange }: I
               {definition.paramsSchema.map((schema) => (
                 <label key={schema.key} className="indicator-panel-param">
                   {schema.label}
-                  <input
-                    type="number"
-                    min={schema.min}
-                    max={schema.max}
-                    step={schema.step}
-                    value={instance.params[schema.key] ?? schema.default}
-                    onChange={(event) =>
-                      onParamsChange(instance.id, {
-                        ...instance.params,
-                        [schema.key]: Number(event.target.value),
-                      })
+                  <ParamInput
+                    schema={schema}
+                    params={instance.params}
+                    onChange={(value) =>
+                      onParamsChange(instance.id, { ...instance.params, [schema.key]: value })
                     }
                   />
                 </label>
@@ -64,4 +63,48 @@ export function IndicatorPanel({ instances, onAdd, onRemove, onParamsChange }: I
       </ul>
     </div>
   );
+}
+
+interface ParamInputProps {
+  schema: IndicatorParamSchema;
+  params: IndicatorParamValues;
+  onChange: (value: number | string) => void;
+}
+
+function ParamInput({ schema, params, onChange }: ParamInputProps) {
+  const model = resolveParamInput(schema, params);
+  const handleChange = (raw: string) => onChange(coerceParamValue(schema, raw));
+
+  switch (model.kind) {
+    case 'enum':
+      return (
+        <select value={model.value} onChange={(event) => handleChange(event.target.value)}>
+          {model.options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      );
+    case 'color':
+      return (
+        <input
+          type="color"
+          className="indicator-panel-color"
+          value={model.value}
+          onChange={(event) => handleChange(event.target.value)}
+        />
+      );
+    default:
+      return (
+        <input
+          type="number"
+          min={model.min}
+          max={model.max}
+          step={model.step}
+          value={model.value}
+          onChange={(event) => handleChange(event.target.value)}
+        />
+      );
+  }
 }

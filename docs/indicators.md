@@ -5,16 +5,37 @@
 ## 指標定義介面（`types.ts`）
 
 ```ts
-interface IndicatorParamSchema {
+interface IndicatorParamOption {
+  value: string;
+  label: string;
+}
+
+// 判別聯集：以 type 區分渲染方式。type 省略時視為 'number'，故既有純數值指標定義無需改動。
+interface NumberParamSchema {
   key: string;
   label: string;
+  type?: 'number';
   default: number;
   min?: number;
   max?: number;
   step?: number;
 }
+interface EnumParamSchema {
+  key: string;
+  label: string;
+  type: 'enum';
+  default: string;
+  options: IndicatorParamOption[];
+}
+interface ColorParamSchema {
+  key: string;
+  label: string;
+  type: 'color';
+  default: string;         // `#rrggbb`
+}
+type IndicatorParamSchema = NumberParamSchema | EnumParamSchema | ColorParamSchema;
 
-type IndicatorParamValues = Record<string, number>;
+type IndicatorParamValues = Record<string, number | string>; // number（數值）或 string（enum/color）
 
 interface IndicatorInstance {
   id: string;           // 使用者新增的單一指標實例（同一 definition 可有多個實例，如 MA5+MA20）
@@ -88,7 +109,9 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 `IndicatorPanel` 是純展示元件：
 
 - Props：`instances`（目前所有 `IndicatorInstance`）、`onAdd(definitionId)`、`onRemove(instanceId)`、`onParamsChange(instanceId, params)`。
-- 上方列出 `listIndicators()` 回傳的每個指標定義的「+ 新增」按鈕；下方列出每個 `instance`，依 `definition.paramsSchema` 動態產生數字輸入框，並有一個移除按鈕。
+- 上方列出 `listIndicators()` 回傳的每個指標定義的「+ 新增」按鈕；下方列出每個 `instance`，依 `definition.paramsSchema` 動態產生參數輸入元件，並有一個移除按鈕。
+- 每個參數的輸入元件由 `paramInput.ts` 的純函式 `resolveParamInput(schema, params)` 決定要渲染哪一種：`number` → `<input type="number">`、`enum` → `<select>`（選項來自 `schema.options`）、`color` → `<input type="color">`。輸入變動時以 `coerceParamValue(schema, raw)` 依型別把原始字串回寫成正確型別（`number` 型別化為數字，`enum`/`color` 保留 string）。渲染決策與型別轉換抽成純函式（不觸 DOM），以 `paramInput.test.ts` 用含 number/enum/color 三型別的測試 schema 單元驗證（本專案無 jsdom 測試環境）。
+- `types.ts` 另提供 `numberParam(params, key, fallback)` helper：讀取數值型參數並容忍以 string 儲存的數字（分享還原等情境），缺值/空字串/非數字時回退 `fallback`。`ma.ts`/`bollinger.ts`/`macd.ts` 的 `compute()` 均改用它讀週期等數值參數，行為不變。
 
 實際狀態管理與 chart 掛載邏輯在別處：
 
