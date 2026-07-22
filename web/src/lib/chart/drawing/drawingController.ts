@@ -1,4 +1,11 @@
-import { CrosshairMode, type IChartApi, type ISeriesApi, type MouseEventParams, type Time } from 'lightweight-charts';
+import {
+  CrosshairMode,
+  TrackingModeExitMode,
+  type IChartApi,
+  type ISeriesApi,
+  type MouseEventParams,
+  type Time,
+} from 'lightweight-charts';
 import { TrendLinePrimitive, type TrendLinePoint } from './trendLinePrimitive';
 
 export interface DrawingControllerOptions {
@@ -55,10 +62,15 @@ export class DrawingController {
     // 畫線模式與原生 pan/zoom 互斥。
     // crosshair 預設 Magnet 模式會把座標吸附到最近K棒的收盤價，導致拖曳終點與觸點位置產生偏移，
     // 畫線時需要 Normal 模式取得未吸附的原始座標，離開畫線模式再吸附回來。
+    // trackingMode 預設 exitMode 是 OnNextTap：觸控放開後 tracking mode 不會自動結束，
+    // 下一次 touchstart 會把「上一條線放開時的 crosshair 座標」當成新的追蹤基準點、與這次
+    // 觸點位置的差值疊加，導致第二條起之後每條線的終點都被前一條線的結束位置污染而越畫越偏。
+    // 改成 OnTouchEnd 讓每次放開都真正結束 tracking mode，下一條線才會是全新的 1:1 座標追蹤。
     this.chart.applyOptions({
       handleScroll: !enabled,
       handleScale: !enabled,
       crosshair: { mode: enabled ? CrosshairMode.Normal : CrosshairMode.Magnet },
+      trackingMode: { exitMode: enabled ? TrackingModeExitMode.OnTouchEnd : TrackingModeExitMode.OnNextTap },
     });
 
     if (enabled) {
