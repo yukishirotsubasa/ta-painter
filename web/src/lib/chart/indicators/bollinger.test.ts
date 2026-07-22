@@ -1,10 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import type { OhlcvBar } from '../../data/types';
+import { DEFAULT_LINE_COLOR } from '../colors';
 import { getIndicator } from './registry';
 import { BollingerIndicator } from './bollinger';
 
 function bar(time: string, close: number): OhlcvBar {
   return { time, open: close, high: close, low: close, close, volume: 1 };
+}
+
+interface FakeSeries {
+  addOptions: Record<string, unknown>;
+  applied: Array<Record<string, unknown>>;
+}
+
+/** 每次 addSeries 回傳獨立的 fake series，依掛載順序記錄於 series 陣列（上/中/下軌）。 */
+function fakeChart(): { chart: unknown; allocator: PaneAllocator; series: FakeSeries[] } {
+  const series: FakeSeries[] = [];
+  const chart = {
+    addSeries: (_series: unknown, options: Record<string, unknown>) => {
+      const record: FakeSeries = { addOptions: options, applied: [] };
+      series.push(record);
+      return {
+        setData: () => {},
+        applyOptions: (opts: Record<string, unknown>) => record.applied.push(opts),
+      };
+    },
+    removeSeries: () => {},
+  };
+  return { chart, allocator: { allocate: () => 0, release: () => {} }, series };
+}
+
+interface PaneAllocator {
+  allocate: () => number;
+  release: () => void;
 }
 
 describe('BollingerIndicator', () => {
@@ -91,5 +119,38 @@ describe('BollingerIndicator', () => {
     expect(narrow[0].middle).toBe(wide[0].middle);
     expect(wide[0].upper).toBeGreaterThan(narrow[0].upper);
     expect(wide[0].lower).toBeLessThan(narrow[0].lower);
+  });
+
+  it('exposes upper/middle/lower color params in its schema', () => {
+    const keys = BollingerIndicator.paramsSchema.map((s) => s.key);
+    expect(keys).toEqual(['period', 'stdDevMultiplier', 'upperColor', 'middleColor', 'lowerColor']);
+
+    for (const key of ['upperColor', 'middleColor', 'lowerColor']) {
+      const schema = BollingerIndicator.paramsSchema.find((s) => s.key === key);
+      expect(schema?.type).toBe('color');
+      expect(schema && 'default' in schema && schema.default).toBe(DEFAULT_LINE_COLOR);
+    }
+  });
+
+  it('applies per-band colors on mount and update, defaulting unspecified bands to the shared line color', () => {
+    const fake = fakeChart();
+    const bars = [bar('2024-01-01', 10), bar('2024-01-02', 12), bar('2024-01-03', 14)];
+
+    const handle = BollingerIndicator.mount(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fake.chart as any,
+      fake.allocator,
+      bars,
+      { period: 2, upperColor: '#111111', middleColor: '#222222' },
+    );
+
+    // series[0]=upper, series[1]=middle, series[2]=lower（掛載順序）。
+    expect(fake.series[0].applied.at(-1)?.color).toBe('#111111');
+    expect(fake.series[1].applied.at(-1)?.color).toBe('#222222');
+    expect(fake.series[2].applied.at(-1)?.color).toBe(DEFAULT_LINE_COLOR);
+
+    handle.update(bars, { period: 2, lowerColor: '#333333' });
+    expect(fake.series[0].applied.at(-1)?.color).toBe(DEFAULT_LINE_COLOR);
+    expect(fake.series[2].applied.at(-1)?.color).toBe('#333333');
   });
 });

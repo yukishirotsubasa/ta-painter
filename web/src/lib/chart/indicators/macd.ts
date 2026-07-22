@@ -7,9 +7,11 @@ import {
   type LineData,
 } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
+import { UP_COLOR, DOWN_COLOR, DEFAULT_LINE_COLOR } from '../colors';
 import { registerIndicator } from './registry';
 import {
   numberParam,
+  stringParam,
   type IndicatorDefinition,
   type IndicatorMountHandle,
   type IndicatorParamValues,
@@ -20,8 +22,9 @@ const DEFAULT_FAST_PERIOD = 12;
 const DEFAULT_SLOW_PERIOD = 26;
 const DEFAULT_SIGNAL_PERIOD = 9;
 
-const UP_COLOR = '#26a69a';
-const DOWN_COLOR = '#ef5350';
+/** DIF 沿用預設藍線，DEA 沿用原本的橘線，保持既有外觀。 */
+const DEFAULT_DIF_COLOR = DEFAULT_LINE_COLOR;
+const DEFAULT_DEA_COLOR = '#ff9800';
 
 export interface MacdPoint {
   time: string;
@@ -105,12 +108,22 @@ function mount(
   params: IndicatorParamValues,
 ): IndicatorMountHandle {
   const paneIndex = paneIndexAllocator.allocate();
-  const difSeries: ISeriesApi<'Line'> = chart.addSeries(LineSeries, { color: '#2196f3', lineWidth: 1 }, paneIndex);
-  const deaSeries: ISeriesApi<'Line'> = chart.addSeries(LineSeries, { color: '#ff9800', lineWidth: 1 }, paneIndex);
+  const difSeries: ISeriesApi<'Line'> = chart.addSeries(
+    LineSeries,
+    { color: stringParam(params, 'difColor', DEFAULT_DIF_COLOR), lineWidth: 1 },
+    paneIndex,
+  );
+  const deaSeries: ISeriesApi<'Line'> = chart.addSeries(
+    LineSeries,
+    { color: stringParam(params, 'deaColor', DEFAULT_DEA_COLOR), lineWidth: 1 },
+    paneIndex,
+  );
   const histogramSeries: ISeriesApi<'Histogram'> = chart.addSeries(HistogramSeries, {}, paneIndex);
 
   const setAll = (currentBars: OhlcvBar[], currentParams: IndicatorParamValues) => {
     const points = computeMacd(currentBars, currentParams);
+    difSeries.applyOptions({ color: stringParam(currentParams, 'difColor', DEFAULT_DIF_COLOR) });
+    deaSeries.applyOptions({ color: stringParam(currentParams, 'deaColor', DEFAULT_DEA_COLOR) });
     difSeries.setData(toLineData(points, 'dif'));
     deaSeries.setData(toLineData(points, 'dea'));
     histogramSeries.setData(toHistogramData(points));
@@ -139,6 +152,8 @@ export const MacdIndicator: IndicatorDefinition<MacdPoint[]> = {
     { key: 'fastPeriod', label: '快線週期(EMA)', default: DEFAULT_FAST_PERIOD, min: 1, max: 200, step: 1 },
     { key: 'slowPeriod', label: '慢線週期(EMA)', default: DEFAULT_SLOW_PERIOD, min: 1, max: 400, step: 1 },
     { key: 'signalPeriod', label: '訊號線週期(EMA)', default: DEFAULT_SIGNAL_PERIOD, min: 1, max: 100, step: 1 },
+    { key: 'difColor', label: 'DIF 線色', type: 'color', default: DEFAULT_DIF_COLOR },
+    { key: 'deaColor', label: 'DEA 線色', type: 'color', default: DEFAULT_DEA_COLOR },
   ],
   compute: computeMacd,
   mount,

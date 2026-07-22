@@ -1,8 +1,10 @@
 import { LineSeries, type IChartApi, type ISeriesApi, type LineData } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
+import { DEFAULT_LINE_COLOR } from '../colors';
 import { registerIndicator } from './registry';
 import {
   numberParam,
+  stringParam,
   type IndicatorDefinition,
   type IndicatorMountHandle,
   type IndicatorParamValues,
@@ -11,6 +13,13 @@ import {
 
 const DEFAULT_PERIOD = 20;
 const DEFAULT_STD_DEV_MULTIPLIER = 2;
+
+/** 三條軌線的色值參數 key，預設沿用 lightweight-charts 預設藍線以保持既有外觀。 */
+const BANDS = [
+  { key: 'upper', colorParam: 'upperColor' },
+  { key: 'middle', colorParam: 'middleColor' },
+  { key: 'lower', colorParam: 'lowerColor' },
+] as const;
 
 export interface BollingerPoint {
   time: string;
@@ -55,15 +64,17 @@ function mount(
   bars: OhlcvBar[],
   params: IndicatorParamValues,
 ): IndicatorMountHandle {
-  const upperSeries: ISeriesApi<'Line'> = chart.addSeries(LineSeries, {}, 0);
-  const middleSeries: ISeriesApi<'Line'> = chart.addSeries(LineSeries, {}, 0);
-  const lowerSeries: ISeriesApi<'Line'> = chart.addSeries(LineSeries, {}, 0);
+  const bands = BANDS.map((band) => ({
+    ...band,
+    series: chart.addSeries(LineSeries, {}, 0) as ISeriesApi<'Line'>,
+  }));
 
   const setAll = (currentBars: OhlcvBar[], currentParams: IndicatorParamValues) => {
     const points = computeBollinger(currentBars, currentParams);
-    upperSeries.setData(toLineData(points, 'upper'));
-    middleSeries.setData(toLineData(points, 'middle'));
-    lowerSeries.setData(toLineData(points, 'lower'));
+    for (const band of bands) {
+      band.series.applyOptions({ color: stringParam(currentParams, band.colorParam, DEFAULT_LINE_COLOR) });
+      band.series.setData(toLineData(points, band.key));
+    }
   };
 
   setAll(bars, params);
@@ -73,9 +84,9 @@ function mount(
       setAll(nextBars, nextParams);
     },
     dispose() {
-      chart.removeSeries(upperSeries);
-      chart.removeSeries(middleSeries);
-      chart.removeSeries(lowerSeries);
+      for (const band of bands) {
+        chart.removeSeries(band.series);
+      }
     },
   };
 }
@@ -87,6 +98,9 @@ export const BollingerIndicator: IndicatorDefinition<BollingerPoint[]> = {
   paramsSchema: [
     { key: 'period', label: '週期', default: DEFAULT_PERIOD, min: 1, max: 240, step: 1 },
     { key: 'stdDevMultiplier', label: '標準差倍數', default: DEFAULT_STD_DEV_MULTIPLIER, min: 0.5, max: 5, step: 0.5 },
+    { key: 'upperColor', label: '上軌線色', type: 'color', default: DEFAULT_LINE_COLOR },
+    { key: 'middleColor', label: '中軌線色', type: 'color', default: DEFAULT_LINE_COLOR },
+    { key: 'lowerColor', label: '下軌線色', type: 'color', default: DEFAULT_LINE_COLOR },
   ],
   compute: computeBollinger,
   mount,

@@ -9,6 +9,7 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts';
 import { createPaneIndexAllocator } from '../../lib/chart/paneIndexAllocator';
+import { UP_COLOR, DOWN_COLOR } from '../../lib/chart/colors';
 import { getIndicator } from '../../lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorMountHandle, PaneIndexAllocator } from '../../lib/chart/indicators/types';
 import { DrawingController } from '../../lib/chart/drawing/drawingController';
@@ -26,10 +27,6 @@ interface ChartContainerProps {
 
 /** pane 0 = K 線、pane 1 = 量能，指標的 separate-pane 配置從 pane 2 開始。 */
 const RESERVED_PANE_COUNT = 2;
-
-// 對齊 lightweight-charts CandlestickSeries 的預設漲跌色，讓量能柱與 K 線同色系。
-const UP_COLOR = '#26a69a';
-const DOWN_COLOR = '#ef5350';
 
 const VOLUME_PANE_HEIGHT = 120;
 

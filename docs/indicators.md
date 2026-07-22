@@ -83,6 +83,15 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 
 **已知限制**：這個 allocator 只是邏輯上的計數器，並未對應 lightweight-charts 實際的 pane 陣列行為——當一個 pane 內最後一個 series 被移除時，lightweight-charts 會自動移除該 pane 並讓後面的 pane index 往前遞補。目前只驗證過「單一 separate-pane 指標（MACD）新增/移除/再新增」的情境（見 `macd.ts` 章節的手動驗證紀錄），尚未驗證**多個** separate-pane 指標同時存在、且中間那個被移除時，allocator 記錄的 index 與 lightweight-charts 實際 pane 陣列是否仍保持一致（目前只有 MACD 一種 separate-pane 指標，尚無法測試這個多指標情境）。
 
+## 共用色票（`lib/chart/colors.ts`）
+
+集中圖表用色，避免各檔案重複寫死相同色值（indicator8）：
+
+- `UP_COLOR = '#26a69a'` / `DOWN_COLOR = '#ef5350'`：漲跌色，`ChartContainer.tsx` 的量能柱與 `macd.ts` 的 histogram 共用同一份（原本兩處各自定義相同色值，現統一由此匯入）。
+- `DEFAULT_LINE_COLOR = '#2196f3'`：lightweight-charts `LineSeries` 的原生預設線色，作為布林通道三軌與 MACD DIF 線色參數的預設值（未調整時外觀與改動前一致）。
+
+> `ma.ts` 仍保留自己的 `DEFAULT_COLOR = '#2196f3'`（值等同 `DEFAULT_LINE_COLOR` 但未併入本檔），這是 indicator8 刻意不擴大 scope 的取捨，已記於 `project-planning/technical-debt.md`。
+
 ## MA 指標（`ma.ts`）
 
 - `id: 'ma'`，`placement: 'overlay'`，`paramsSchema` 三個參數：
@@ -99,17 +108,17 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 
 ## 布林通道指標（`bollinger.ts`）
 
-- `id: 'bollinger'`，`placement: 'overlay'`，`paramsSchema` 有兩個參數：`period`（週期，預設 20，範圍 1–240）、`stdDevMultiplier`（標準差倍數，預設 2，範圍 0.5–5）。
+- `id: 'bollinger'`，`placement: 'overlay'`，`paramsSchema` 有五個參數：`period`（週期，預設 20，範圍 1–240）、`stdDevMultiplier`（標準差倍數，預設 2，範圍 0.5–5），以及三軌線色 `upperColor`/`middleColor`/`lowerColor`（color，皆預設 `DEFAULT_LINE_COLOR`＝`#2196f3`，未調整時三軌同色，與改動前一致）。
 - `compute(bars, params)`：與 MA 相同的滑動視窗邏輯，對每個索引 `i >= period - 1` 取 `bars[i-period+1 ..= i]` 這個視窗，算 `close` 的平均（中軌）與**母體標準差**（分母為 `period`，不是 `period - 1`），回傳 `{ time, upper, middle, lower }[]`；資料不足 period 天的時間點不輸出，回傳陣列長度會比 `bars` 短，與 MA 一致。
-- `mount()`：`chart.addSeries(LineSeries, {}, 0)` 呼叫三次疊加在主圖 pane 0（上/中/下軌各一條 `ISeriesApi<'Line'>`），`setData()` 分別放入 `compute()` 結果的對應欄位。`update()` 對三條 series 都重新 `setData()`，`dispose()` 對三條都呼叫 `chart.removeSeries()`。
-- 數值正確性已用真實 TWSE 公開數字交叉驗證過（見 `bollinger.test.ts`，取自 `twseProvider.test.ts` 的 2330 真實收盤價算 period=5 的中軌/上軌/下軌比對），另有測試驗證 `stdDevMultiplier` 越大則帶寬越寬、中軌不受影響。
+- `mount()`：依模組常數 `BANDS`（`upper`/`middle`/`lower` 各對應資料欄位與色值參數 key）`chart.addSeries(LineSeries, {}, 0)` 三次疊加在主圖 pane 0。每次 `setData()` 前先 `series.applyOptions({ color })`，色值以 `stringParam(params, band.colorParam, DEFAULT_LINE_COLOR)` 讀取，故 mount 與 `update()` 都會即時套用當前線色。`dispose()` 對三條都呼叫 `chart.removeSeries()`。
+- 數值正確性已用真實 TWSE 公開數字交叉驗證過（見 `bollinger.test.ts`，取自 `twseProvider.test.ts` 的 2330 真實收盤價算 period=5 的中軌/上軌/下軌比對），另有測試驗證 `stdDevMultiplier` 越大則帶寬越寬、中軌不受影響；並以 fake-chart 驗證三軌線色參數在 schema 中為 `color` 型別、且 mount/update 依序套到上/中/下軌（未指定的軌回退 `DEFAULT_LINE_COLOR`）。
 
 ## MACD 指標（`macd.ts`）
 
-- `id: 'macd'`，`placement: 'separate-pane'`，`paramsSchema` 有三個參數：`fastPeriod`（快線 EMA 週期，預設 12）、`slowPeriod`（慢線 EMA 週期，預設 26）、`signalPeriod`（訊號線 EMA 週期，預設 9）。
+- `id: 'macd'`，`placement: 'separate-pane'`，`paramsSchema` 有五個參數：`fastPeriod`（快線 EMA 週期，預設 12）、`slowPeriod`（慢線 EMA 週期，預設 26）、`signalPeriod`（訊號線 EMA 週期，預設 9），以及 `difColor`（DIF 線色，color，預設 `DEFAULT_LINE_COLOR`＝`#2196f3`）、`deaColor`（DEA 線色，color，預設 `#ff9800`）。
 - `compute(bars, params)`：先算 `computeEmaSeries()`（種子為前 period 筆 `close` 的 SMA，之後每筆用標準 EMA 遞迴公式 `value * k + prev * (1-k)`，`k = 2/(period+1)`）分別對 `close` 算快線與慢線 EMA；DIF = 快線 EMA − 慢線 EMA（對齊到兩者都有值的索引，即 `bars` 索引 `slowPeriod-1` 之後）；DEA = 對 DIF 序列再算一次 EMA（週期 `signalPeriod`）；histogram = DIF − DEA。回傳 `{ time, dif, dea, histogram }[]`，資料不足以算出完整 DIF/DEA（`bars.length < slowPeriod + signalPeriod - 1`）時不輸出，與 MA/布林通道一致。
-- `mount()`：透過 `paneIndexAllocator.allocate()` 拿一個新的 pane index，在該 pane 疊加兩條 `LineSeries`（DIF 藍色 `#2196f3`、DEA 橙色 `#ff9800`）+ 一個 `HistogramSeries`（histogram ≥ 0 用 `#26a69a`、< 0 用 `#ef5350`，跟量能柱同色系）。`update()` 對三個 series 都重新 `setData()`；`dispose()` 移除三個 series 後呼叫 `paneIndexAllocator.release(paneIndex)` 歸還 pane index。
-- 數值正確性已用手算等差數列（`fastPeriod=2/slowPeriod=4/signalPeriod=2`，精確驗證 DIF/DEA/histogram）與獨立重寫的 EMA/MACD 公式交叉驗證非平凡序列（見 `macd.test.ts`）；另有測試涵蓋「剛好足夠資料量輸出一筆」與「資料不足回傳空陣列」的邊界情況。
+- `mount()`：透過 `paneIndexAllocator.allocate()` 拿一個新的 pane index，在該 pane 疊加兩條 `LineSeries`（DIF/DEA，線色由 `difColor`/`deaColor` 參數決定）+ 一個 `HistogramSeries`。histogram 漲跌色改**讀共用色票** `colors.ts`（≥ 0 用 `UP_COLOR`、< 0 用 `DOWN_COLOR`，與量能柱同一份，不開參數）。`update()` 對 DIF/DEA 重新 `applyOptions({ color })` 後三個 series 都重新 `setData()`；`dispose()` 移除三個 series 後呼叫 `paneIndexAllocator.release(paneIndex)` 歸還 pane index。
+- 數值正確性已用手算等差數列（`fastPeriod=2/slowPeriod=4/signalPeriod=2`，精確驗證 DIF/DEA/histogram）與獨立重寫的 EMA/MACD 公式交叉驗證非平凡序列（見 `macd.test.ts`）；另有測試涵蓋「剛好足夠資料量輸出一筆」與「資料不足回傳空陣列」的邊界情況，以及以 fake-chart 驗證 `difColor`/`deaColor` 在 mount/update 套到對應 series、histogram 各柱色值取自共用 `UP_COLOR`/`DOWN_COLOR`。
 
 ## 指標清單 UI（`components/chart/IndicatorPanel.tsx` + `App.tsx`）
 
@@ -118,7 +127,7 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 - Props：`instances`（目前所有 `IndicatorInstance`）、`onAdd(definitionId)`、`onRemove(instanceId)`、`onParamsChange(instanceId, params)`。
 - 上方列出 `listIndicators()` 回傳的每個指標定義的「+ 新增」按鈕；下方列出每個 `instance`，依 `definition.paramsSchema` 動態產生參數輸入元件，並有一個移除按鈕。
 - 每個參數的輸入元件由 `paramInput.ts` 的純函式 `resolveParamInput(schema, params)` 決定要渲染哪一種：`number` → `<input type="number">`、`enum` → `<select>`（選項來自 `schema.options`）、`color` → `<input type="color">`。輸入變動時以 `coerceParamValue(schema, raw)` 依型別把原始字串回寫成正確型別（`number` 型別化為數字，`enum`/`color` 保留 string）。渲染決策與型別轉換抽成純函式（不觸 DOM），以 `paramInput.test.ts` 用含 number/enum/color 三型別的測試 schema 單元驗證（本專案無 jsdom 測試環境）。
-- `types.ts` 另提供兩個讀參數 helper：`numberParam(params, key, fallback)` 讀數值型參數並容忍以 string 儲存的數字（分享還原等情境），缺值/空字串/非數字時回退 `fallback`；`stringParam(params, key, fallback)` 讀字串型（enum/color）參數，非字串或空字串時回退 `fallback`。`ma.ts`/`bollinger.ts`/`macd.ts` 的 `compute()` 用 `numberParam` 讀週期等數值參數；`ma.ts` 用 `stringParam` 讀 `source`/`color`。
+- `types.ts` 另提供兩個讀參數 helper：`numberParam(params, key, fallback)` 讀數值型參數並容忍以 string 儲存的數字（分享還原等情境），缺值/空字串/非數字時回退 `fallback`；`stringParam(params, key, fallback)` 讀字串型（enum/color）參數，非字串或空字串時回退 `fallback`。`ma.ts`/`bollinger.ts`/`macd.ts` 的 `compute()` 用 `numberParam` 讀週期等數值參數；`ma.ts` 的 `mount()` 用 `stringParam` 讀 `source`/`color`，`bollinger.ts`/`macd.ts` 的 `mount()` 亦用 `stringParam` 讀各線色參數。
 
 實際狀態管理與 chart 掛載邏輯在別處：
 
@@ -145,5 +154,5 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 
 ## 已知限制 / 尚未實作
 
-- 因為 sandbox 網路限制，MA／布林通道／MACD 疊加到圖表上的**視覺效果**未經肉眼確認，只驗證過互動邏輯（見上）與 `compute()` 數值正確性。MA 的 `source`/`color`/pane 配置（含 volume 掛到量能 pane、source 切換時 `moveToPane`）亦僅以 fake-chart 單元測試驗證契約，未經真實瀏覽器肉眼確認渲染效果。
+- 因為 sandbox 網路限制，MA／布林通道／MACD 疊加到圖表上的**視覺效果**未經肉眼確認，只驗證過互動邏輯（見上）與 `compute()` 數值正確性。MA 的 `source`/`color`/pane 配置（含 volume 掛到量能 pane、source 切換時 `moveToPane`）、布林三軌線色、MACD `difColor`/`deaColor` 與 histogram 共用色票，亦僅以 fake-chart 單元測試驗證契約，未經真實瀏覽器肉眼確認渲染效果。
 - `PaneIndexAllocator` 尚未驗證「多個 separate-pane 指標同時存在」的情境（見上方章節說明），因為目前只有 MACD 一種 separate-pane 指標。

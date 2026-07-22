@@ -11,10 +11,11 @@
 ## ChartContainer 圖表配色寫死，未跟隨 light/dark 主題
 
 - **來源任務**：[chart1](task-pool/chart1.md) / [chart2](task-pool/chart2.md)
-- **狀況**：`web/src/index.css` 已用 `prefers-color-scheme` 定義 `--bg`/`--text`/`--border` 等 CSS variable 供 light/dark 兩套配色，但 `ChartContainer.tsx` 的 `createChart` 選項（`layout.textColor`、`grid` 線色）與量能柱 `UP_COLOR`/`DOWN_COLOR` 都是寫死的 hex 常數，不會隨系統主題切換。lightweight-charts 是 canvas 渲染，CSS variable 無法直接套用，需要 JS 端讀取目前主題再呼叫 `chart.applyOptions()`。[macd.ts](../web/src/lib/chart/indicators/macd.ts) 的 DIF/DEA 線色（`#2196f3`/`#ff9800`）與 histogram 的漲跌色（各自重複定義一份 `UP_COLOR`/`DOWN_COLOR`，數值跟 `ChartContainer.tsx` 相同但沒有共用常數）同樣是寫死 hex，屬同一類問題。
-- **影響**：目前介面沒有主題切換 UI，尚未有可觀察的視覺錯誤；但 responsive/RWD 模組（`responsive1`）或任何未來的主題切換功能上線後，圖表本身（含量能柱與 MACD histogram）會維持深色配色不跟著換，造成視覺不一致。另外 `ChartContainer.tsx` 與 `macd.ts` 各自定義一份相同數值的 `UP_COLOR`/`DOWN_COLOR`，未來調色只改一處會造成兩處不一致。
-- **建議**：實作淺色主題支援時，改用 `window.matchMedia('(prefers-color-scheme: dark)')`（或未來的主題 state）動態算出色票，並在偵測到主題變化時對圖表與各指標的 series 呼叫對應的 `applyOptions()`/重新 `setData()` 更新；同時把 `UP_COLOR`/`DOWN_COLOR` 抽成共用常數（例如 `lib/chart/colors.ts`），讓 `ChartContainer.tsx` 與 `macd.ts` 共用同一份。
-- **對應任務**：[indicator8](task-pool/indicator8.md)（顏色可調 + 抽出 `lib/chart/colors.ts`）；主題跟隨系統的部分留 responsive 模組。
+- **狀況**：`web/src/index.css` 已用 `prefers-color-scheme` 定義 `--bg`/`--text`/`--border` 等 CSS variable 供 light/dark 兩套配色，但 `ChartContainer.tsx` 的 `createChart` 選項（`layout.textColor`、`grid` 線色）與量能柱漲跌色、各指標線色都是寫死的 hex 常數，不會隨系統主題切換。lightweight-charts 是 canvas 渲染，CSS variable 無法直接套用，需要 JS 端讀取目前主題再呼叫 `chart.applyOptions()`。
+- **~~共用常數重複定義~~（已解，indicator8，2026-07-23）**：漲跌色已抽出至 [`lib/chart/colors.ts`](../web/src/lib/chart/colors.ts)（`UP_COLOR`/`DOWN_COLOR`/`DEFAULT_LINE_COLOR`），`ChartContainer.tsx`（量能柱）與 `macd.ts`（histogram）改共用同一份，不再各自重複定義；布林三軌、MACD DIF/DEA 線色亦改為可調參數（預設沿用 `DEFAULT_LINE_COLOR`/`#ff9800`）。**唯「配色不跟隨系統 light/dark 主題」這部分仍未解**（見下）。
+- **影響**：目前介面沒有主題切換 UI，尚未有可觀察的視覺錯誤；但 responsive/RWD 模組（`responsive1`）或任何未來的主題切換功能上線後，圖表本身（含量能柱與 MACD histogram、各指標線的預設色）會維持深色配色不跟著換，造成視覺不一致。
+- **建議**：實作淺色主題支援時，改用 `window.matchMedia('(prefers-color-scheme: dark)')`（或未來的主題 state）動態算出色票，並在偵測到主題變化時對圖表與各指標的 series 呼叫對應的 `applyOptions()`/重新 `setData()` 更新；共用色票已集中在 `lib/chart/colors.ts`，屆時可直接讓該檔依主題輸出兩套色值。
+- **對應任務**：共用常數抽出已由 [indicator8](task-pool/indicator8.md) 完成；主題跟隨系統的部分留 responsive 模組。
 
 ## PaneIndexAllocator 尚未驗證多個 separate-pane 指標同時存在的 index 一致性
 
@@ -87,6 +88,14 @@
 - **影響**：目前 pane 佈局固定，沒有可觀察問題。但若未來 `ChartContainer` 調整保留 pane 的數量或順序（例如把量能改成可關閉、或在 K 線與量能之間插入其他 reserved pane），`ma.ts` 的 `VOLUME_PANE_INDEX = 1` 會靜默指向錯誤的 pane（volume MA 掛錯位置或撐爆別的 scale），且 TypeScript 無法在編譯期攔到。
 - **建議**：把「保留 pane 的語意 → index」對應集中到單一來源，例如在 `paneIndexAllocator`（或新的 `lib/chart/panes.ts`）曝光 `PRICE_PANE_INDEX`/`VOLUME_PANE_INDEX` 具名常數，讓 `ChartContainer` 與 `ma.ts` 共同引用；或由 `mount()` 透過參數把量能 pane index 傳進來，而非在指標檔案內硬編。
 - **對應任務**：暫無（defer，pane 佈局變動時一併處理）。
+
+## `ma.ts` 仍保留自己的 `DEFAULT_COLOR`，未併入共用 `colors.ts`
+
+- **來源任務**：[indicator8](task-pool/indicator8.md)（2026-07-23）
+- **狀況**：indicator8 抽出 `lib/chart/colors.ts` 的 `DEFAULT_LINE_COLOR = '#2196f3'` 供布林/MACD 線色參數預設值使用，但 `ma.ts` 仍沿用自己既有的 `const DEFAULT_COLOR = '#2196f3'`（indicator7 留下），未改成 import `DEFAULT_LINE_COLOR`。這是刻意不擴大 scope 的取捨——indicator8 驗收只要求 `ChartContainer.tsx` 與 `macd.ts` 不重複定義，`ma.ts` 屬剛完成的 indicator7 檔案，為避免動到已測過的行為而未一併整併。
+- **影響**：兩個常數數值相同（`#2196f3`），目前無可觀察問題。但未來若要調整「預設線色」這個語意（例如整體改用另一個藍），需同時改 `colors.ts` 與 `ma.ts` 兩處，漏改一處會造成 MA 與布林/MACD 預設線色不一致。
+- **建議**：下次動到 `ma.ts` 時，把 `DEFAULT_COLOR` 改成 `import { DEFAULT_LINE_COLOR } from '../colors'`，讓三個指標共用單一預設線色來源。
+- **對應任務**：暫無（defer，動到 `ma.ts` 時順手整併）。
 
 ## ~~三來源成交量口徑不一致（Yahoo 略低）~~（決策：不處理，2026-07-22）
 

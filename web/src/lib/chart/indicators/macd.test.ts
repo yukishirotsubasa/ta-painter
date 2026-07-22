@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OhlcvBar } from '../../data/types';
+import { UP_COLOR, DOWN_COLOR, DEFAULT_LINE_COLOR } from '../colors';
 import { getIndicator } from './registry';
 import { MacdIndicator } from './macd';
 
@@ -9,6 +10,31 @@ function bar(time: string, close: number): OhlcvBar {
 
 function bars(closes: number[]): OhlcvBar[] {
   return closes.map((close, i) => bar(`2024-01-${String(i + 1).padStart(2, '0')}`, close));
+}
+
+interface FakeSeries {
+  addOptions: Record<string, unknown>;
+  applied: Array<Record<string, unknown>>;
+  lastData: unknown;
+}
+
+/** 依掛載順序記錄各 series：series[0]=DIF、series[1]=DEA、series[2]=histogram。 */
+function fakeChart(): { chart: unknown; allocator: { allocate: () => number; release: () => void }; series: FakeSeries[] } {
+  const series: FakeSeries[] = [];
+  const chart = {
+    addSeries: (_series: unknown, options: Record<string, unknown>) => {
+      const record: FakeSeries = { addOptions: options, applied: [], lastData: undefined };
+      series.push(record);
+      return {
+        setData: (data: unknown) => {
+          record.lastData = data;
+        },
+        applyOptions: (opts: Record<string, unknown>) => record.applied.push(opts),
+      };
+    },
+    removeSeries: () => {},
+  };
+  return { chart, allocator: { allocate: () => 2, release: () => {} }, series };
 }
 
 describe('MacdIndicator', () => {
@@ -108,5 +134,43 @@ describe('MacdIndicator', () => {
     const data = bars(Array.from({ length: 34 }, (_, i) => 100 + i));
 
     expect(MacdIndicator.compute(data, {})).toHaveLength(1);
+  });
+
+  it('exposes difColor and deaColor color params in its schema', () => {
+    const dif = MacdIndicator.paramsSchema.find((s) => s.key === 'difColor');
+    const dea = MacdIndicator.paramsSchema.find((s) => s.key === 'deaColor');
+
+    expect(dif?.type).toBe('color');
+    expect(dif && 'default' in dif && dif.default).toBe(DEFAULT_LINE_COLOR);
+    expect(dea?.type).toBe('color');
+    expect(dea && 'default' in dea && dea.default).toBe('#ff9800');
+  });
+
+  it('applies difColor/deaColor on mount and update; histogram bars use the shared up/down colors', () => {
+    // 收盤價升跌交錯，確保 histogram 同時出現正負（漲跌兩色）。
+    const data = bars([100, 102, 101, 105, 107, 106, 110, 112, 111, 115, 118, 116]);
+    const params = { fastPeriod: 3, slowPeriod: 6, signalPeriod: 3 };
+    const fake = fakeChart();
+
+    const handle = MacdIndicator.mount(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fake.chart as any,
+      fake.allocator,
+      data,
+      { ...params, difColor: '#111111', deaColor: '#222222' },
+    );
+
+    expect(fake.series[0].addOptions.color).toBe('#111111');
+    expect(fake.series[1].addOptions.color).toBe('#222222');
+
+    const histogram = fake.series[2].lastData as Array<{ color: string }>;
+    expect(histogram.length).toBeGreaterThan(0);
+    for (const point of histogram) {
+      expect([UP_COLOR, DOWN_COLOR]).toContain(point.color);
+    }
+
+    handle.update(data, { ...params, difColor: '#333333', deaColor: '#444444' });
+    expect(fake.series[0].applied.at(-1)?.color).toBe('#333333');
+    expect(fake.series[1].applied.at(-1)?.color).toBe('#444444');
   });
 });
