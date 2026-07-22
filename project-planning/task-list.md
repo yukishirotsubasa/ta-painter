@@ -69,7 +69,7 @@ share3 -> share5
 | [drawing2](task-pool/drawing2.md) | 完成 | High | drawing1 | `DrawingController` 正式實作（按下拖曳，拖曳中即時預覽），縮放/resize 後線條不跑位（僅桌面，觸控見 drawing5） |
 | [drawing3](task-pool/drawing3.md) | 完成 | Medium | drawing2, chart3 | 切換股票自動清除畫線，切代號後線條消失（僅桌面，觸控見 drawing5） |
 | [drawing4](task-pool/drawing4.md) | 完成 | Low | drawing2 | 多條線管理＋刪除單條線功能（僅桌面，觸控見 drawing5） |
-| [drawing5](task-pool/drawing5.md) | 等待 | High | drawing2, drawing3, drawing4 | 行動觸控人工驗證（正式部署站台，待 drawing2/3/4 桌面完成並 push 到 main 後進行，一次性驗證並回報結果） |
+| [drawing5](task-pool/drawing5.md) | 完成 | High | drawing2, drawing3, drawing4 | 行動觸控人工驗證（正式部署站台）已完成：拖曳畫線/縮放錨定/切股清除均正常；發現終點座標偏移問題（crosshair Magnet 吸附）並已修正；觸控無刪除單條線 UI 的限制已記錄為技術債，暫不處理 |
 
 ### share Module
 

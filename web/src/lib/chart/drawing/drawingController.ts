@@ -1,4 +1,4 @@
-import type { IChartApi, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts';
+import { CrosshairMode, type IChartApi, type ISeriesApi, type MouseEventParams, type Time } from 'lightweight-charts';
 import { TrendLinePrimitive, type TrendLinePoint } from './trendLinePrimitive';
 
 export interface DrawingControllerOptions {
@@ -53,7 +53,13 @@ export class DrawingController {
     this.enabled = enabled;
 
     // 畫線模式與原生 pan/zoom 互斥。
-    this.chart.applyOptions({ handleScroll: !enabled, handleScale: !enabled });
+    // crosshair 預設 Magnet 模式會把座標吸附到最近K棒的收盤價，導致拖曳終點與觸點位置產生偏移，
+    // 畫線時需要 Normal 模式取得未吸附的原始座標，離開畫線模式再吸附回來。
+    this.chart.applyOptions({
+      handleScroll: !enabled,
+      handleScale: !enabled,
+      crosshair: { mode: enabled ? CrosshairMode.Normal : CrosshairMode.Magnet },
+    });
 
     if (enabled) {
       this.container.addEventListener('mousedown', this.onMouseDown);

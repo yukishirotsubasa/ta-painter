@@ -54,12 +54,12 @@ class DrawingController {
 
 ### 按下拖曳互動（桌面與行動統一）
 
-- **開啟（`setEnabled(true)`）**：`chart.applyOptions({ handleScroll: false, handleScale: false })` 關閉原生 pan/zoom（含觸控），並在 `container` 上掛原生 `mousedown`/`touchstart`/`touchmove`/`touchend`/`touchcancel` 監聽器，`window` 上掛 `mouseup`，並 `chart.subscribeCrosshairMove()`。
+- **開啟（`setEnabled(true)`）**：`chart.applyOptions({ handleScroll: false, handleScale: false, crosshair: { mode: CrosshairMode.Normal } })` 關閉原生 pan/zoom（含觸控），並在 `container` 上掛原生 `mousedown`/`touchstart`/`touchmove`/`touchend`/`touchcancel` 監聽器，`window` 上掛 `mouseup`，並 `chart.subscribeCrosshairMove()`。crosshair 模式額外切成 `Normal`（drawing5 觸控驗證修正）：lightweight-charts 預設 `CrosshairMode.Magnet` 會把 `subscribeCrosshairMove` 回傳的座標吸附到當下時間點最近那根 K 棒的**收盤價**，而非滑鼠/手指的原始座標；`onCrosshairMove` 直接拿這個座標當拖曳終點，會跟用原始座標算的起點（見下）不一致，造成拖出的線終點偏移到收盤價位置（長上下影線的 K 棒上偏移量明顯，十字星上幾乎為零）。桌面滑鼠因為有原生十字線同步可見不易察覺，觸控時手指擋住畫面、放開瞬間線才「跳」到收盤價位置，才被使用者實測發現。
 - **按下**：因 chart API 沒有「按下」事件可訂閱，起點座標改用 `chart.timeScale().coordinateToTime(x)` + `series.coordinateToPrice(y)` 自行換算（`x`/`y` 為相對 `container` 的座標）；只接受 y 落在主圖（K 線）pane 高度內（`chart.panes()[0].getHeight()`）的按下，避免用量能 pane 的 y 座標誤套主圖價格軸。
 - **拖曳中**：`subscribeCrosshairMove` 取得即時座標，只要處於拖曳狀態就持續更新終點畫出預覽線（第一次移動時才真正 `new TrendLinePrimitive()` + `attachPrimitive()`，存在 `activeLine`，尚未進入 `lines` 陣列）。
 - **放開**：`mouseup`（掛在 `window`，避免放開時游標已離開 canvas 而漏接）/`touchend`/`touchcancel` 把 `activeLine` push 進內部 `lines: TrendLinePrimitive[]` 陣列並清空 `activeLine`/`anchor`/`dragging`，該線的 `points` 維持在放開當下的座標不再更新。**每次完整拖曳都會產生一條新線**，不會覆蓋先前已定案的線（drawing1 spike 版本用單一 `trendLineRef` 會互相覆蓋，drawing2 已改為陣列管理）。
 - 另掛一個 `touchmove` 監聽器（`{ passive: false }`），僅在拖曳中呼叫 `preventDefault()`，避免瀏覽器原生觸控捲動搶走拖曳手勢。
-- **關閉（`setEnabled(false)`）**：`handleScroll`/`handleScale` 恢復為 `true`，unsubscribe 所有監聽器（含 drawing4 新增的 `keydown`）；若關閉當下有未定案的拖曳中的線（`activeLine`）會被捨棄（`detachPrimitive` + 不 push 進陣列），已定案的線（`lines` 陣列內）不受影響、畫面上維持顯示；同時清除目前的選取狀態（見下）。
+- **關閉（`setEnabled(false)`）**：`handleScroll`/`handleScale` 恢復為 `true`，`crosshair.mode` 恢復為 `CrosshairMode.Magnet`（還原畫線模式以外的預設吸附手感），unsubscribe 所有監聽器（含 drawing4 新增的 `keydown`）；若關閉當下有未定案的拖曳中的線（`activeLine`）會被捨棄（`detachPrimitive` + 不 push 進陣列），已定案的線（`lines` 陣列內）不受影響、畫面上維持顯示；同時清除目前的選取狀態（見下）。
 
 ### 選取與刪除單條線（drawing4）
 
@@ -98,8 +98,13 @@ class DrawingController {
 
 **drawing4（選取刪除單條線）**：延續 drawing3 的作法，改用 `drawingController.test.ts` 的 unit test 驗證（同一份 Browser pane 環境限制持續存在）。這次額外讓 fake series 的 `attachPrimitive`/`detachPrimitive` 真的呼叫 primitive 的 `attached()`/`detached()`（比照真實 lightweight-charts 庫的行為），讓 `TrendLinePrimitive.hitTest()` 依賴的 `chart`/`series` 欄位在測試中也會被正確設定；並在 `timeScale()`/`series` 的 fake 補上 `timeToCoordinate`/`priceToCoordinate`（互為 `coordinateToTime`/`coordinateToPrice` 的反函式），讓命中判定用的像素座標換算與畫線時一致。涵蓋情境：純點擊（無拖曳）不會誤建新線；點選其中一條線按 `Delete` 只刪那條、`series.detachPrimitive()` 呼叫對象正確；點空白處清除選取，此時按 `Delete` 無作用；選取一條線後在別處拖出新線，原本的選取與按鍵刪除仍正確作用在原本那條線上。使用者之後在自己的真實瀏覽器手動測試確認：刪除單條線功能可正常運作，但線條容許誤差（6px）偏小、實際點擊常落空，已記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條) 待後續優化。
 
+**drawing5（行動觸控人工驗證，正式部署站台）**：使用者在真實觸控裝置上對正式部署站台實測，回報三項結果：
+
+1. 觸控拖曳建立線條：長按（觸發 lightweight-charts 內建的 tracking mode）可開始畫線，拖曳中預覽線正確跟著手指移動，放開後定案——流程本身可行；但**線條終點座標偏移過多**，根因即上一節所述的 `CrosshairMode.Magnet` 座標吸附問題，已在本次 session 修正（`setEnabled` 切換 crosshair 模式）。
+2. 觸控端選取線條比桌面容易命中，但**沒有任何 UI 可以刪除選取中的單條線**——`deleteSelectedLine()` 目前只綁在 `window` 的 `keydown`（`Delete`/`Backspace`），觸控裝置沒有實體鍵盤，選到線也無法刪除。使用者確認此限制暫不處理，記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#觸控裝置無法刪除選取中的單條線缺少刪除-ui) 待後續評估。
+3. 縮放圖表（zoom）的線條錨定、切換股票代號後畫線自動清除，觸控環境下皆正常運作，符合 drawing2/drawing3 桌面端已驗證的行為。
+
 ## 已知限制 / 尚未實作
 
-- **行動觸控**：拖曳建立起點的邏輯（`touchstart`）不依賴庫內部事件轉換，風險較低；但「拖曳中 `subscribeCrosshairMove` 對 `touchmove` 的即時反應」與「點擊選取（drawing4）在觸控上的手感」尚未實測。集中驗證見 [drawing5](../project-planning/task-pool/drawing5.md)，須在正式部署站台上進行。
+- **觸控裝置無法刪除選取中的單條線**：`DrawingController` 刪除邏輯只綁在 `window` 的 `keydown`（`Delete`/`Backspace`，見上）,觸控裝置沒有鍵盤可觸發，目前選取後沒有任何替代 UI（按鈕/手勢）可以刪除該線。drawing5 觸控實測發現後使用者確認暫不修，詳見 [`technical-debt.md`](../project-planning/technical-debt.md#觸控裝置無法刪除選取中的單條線缺少刪除-ui)。
 - **選取的點擊命中容差偏小**：目前 `HIT_TEST_TOLERANCE_PX = 6`px，真實瀏覽器實測反映難以點中線條；改善方向見 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條)。
-- **切股清除的瀏覽器實測**：`ChartContainer` 內 `stockNo` 變動觸發 `clearAll()` 的 wiring 尚未在真實瀏覽器中實際畫線＋切股驗證過（受限於本節開頭所述的 Browser pane 環境限制），僅有 `drawingController.test.ts` 的邏輯層驗證 + 程式碼審閱。建議下次有能正常截圖的環境時補做一次真人瀏覽器手動驗證。

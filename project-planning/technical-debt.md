@@ -38,6 +38,17 @@
   2. 在此之上疊加 hover 預覽：`onCrosshairMove` 目前只在 `dragging` 時處理，其實未按下滑鼠移動也會持續觸發 `subscribeCrosshairMove`，可以在未拖曳時也做 hit-test，滑到線附近就即時提示（游標變 `pointer`、線條 hover 高亮），讓使用者點擊前就知道會選到哪條。
   3. 另一個評估過但改動範圍明顯較大的方向：另外做一個「已畫線條清單」UI 面板，列出每條線並附刪除按鈕，完全不需要在畫布上精準點選；但需要把 `DrawingController` 內部的 `lines` 陣列曝光成可被 React 觀察（目前是純 imperative 黑盒、沒有任何回調），超出當初 drawing4 的 scope。
 
+## 觸控裝置無法刪除選取中的單條線（缺少刪除 UI）
+
+- **來源任務**：[drawing5](task-pool/drawing5.md)（行動觸控人工驗證，2026-07-22）
+- **狀況**：`DrawingController.deleteSelectedLine()`（`web/src/lib/chart/drawing/drawingController.ts`）只透過 `window` 的 `keydown` 監聽器觸發（`Delete`/`Backspace`，見 [`docs/drawing.md`](../docs/drawing.md)）。觸控裝置沒有實體鍵盤，選取到線條後（觸控端命中判定比桌面容易）沒有任何按鈕或手勢可以刪除該線；`DrawingController` 也沒有對外曝光選取狀態變化的回呼或 public 的 `deleteSelected()` 方法，React 層目前無從得知「目前有沒有線被選取」。
+- **影響**：觸控使用者可以畫線、選取線，但無法單獨刪除某一條，只能靠切換股票代號（`clearAll()`）整批清除。使用者實測後確認此限制暫不處理。
+- **建議**：討論過的候選方案（優先度依實作成本排序）：
+  1. `ChartToolbar` 固定加一顆「刪除選取線」按鈕，平常 disabled，有選取時才 enabled；需要 `DrawingController` 曝光 selection-changed callback + public `deleteSelected()`。
+  2. 選取線條後，在該線附近浮現一顆刪除／X 按鈕；體驗更直覺（所見即所刪），但需要把邏輯座標換算成畫面像素座標來定位按鈕，改動範圍較大。
+  3. 用手勢觸發（例如長按已選取的線）；不需新增 UI 元件，但容易誤觸，且需要跟現有「長按開始畫線」手勢做區分，衝突風險較高。
+  方案 1 與現有 `HIT_TEST_TOLERANCE_PX` 命中容差優化（見下一則技術債）可以一併處理，因為兩者都需要先把 `DrawingController` 的內部選取狀態曝光給 React 層觀察。
+
 ## 沒有本機 pre-commit/CI type-check，`main` 曾出現能過 test 但過不了 `tsc -b` 的 commit
 
 - **來源任務**：[drawing4](task-pool/drawing4.md)（修正於本次 session，2026-07-22）
