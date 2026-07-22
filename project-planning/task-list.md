@@ -9,8 +9,7 @@
 ```text
 responsive1 -> responsive2
 responsive1 -> responsive3
-data5
-data6 -> data7
+data7
 share1 -> share2
 share3 -> share4
 share3 -> share5
@@ -35,8 +34,8 @@ share3 -> share5
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
 | [data4](task-pool/data4.md) | 完成 | Medium | data3 | localStorage 快取（月粒度＋LRU），同區間重查時 Network 面板顯示無重複請求 |
-| [data5](task-pool/data5.md) | 等待 | Medium | infra2, data1 | `TpexProvider`（走 Worker proxy），查詢上櫃代號取得正確資料 |
-| [data6](task-pool/data6.md) | 等待 | Medium | infra2, data1 | `YahooProvider`（走 Worker proxy），長區間一次查詢成功回傳完整資料 |
+| [data5](task-pool/data5.md) | 完成 | Medium | infra2, data1 | `TpexProvider`（走 Worker proxy），查詢上櫃代號取得正確資料 |
+| [data6](task-pool/data6.md) | 完成 | Medium | infra2, data1 | `YahooProvider`（走 Worker proxy），長區間一次查詢成功回傳完整資料 |
 | [data7](task-pool/data7.md) | 等待 | Low | data3, data6 | 自動選源／長區間切源提示 UI，觸發長區間查詢時顯示等待提示或一鍵切換 Yahoo |
 
 ### chart Module

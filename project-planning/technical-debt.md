@@ -68,7 +68,15 @@
 - **來源任務**：[infra2](task-pool/infra2.md)
 - **狀況**：實作過程中實測發現兩個上游站台的存取限制都是「非官方文件、隨時可能變動」的規則：TPEx 會封鎖 Cloudflare Workers 的出站 IP range（因此把 proxy 從 Cloudflare Worker 改成 Deno Deploy，見 [`docs/proxy.md`](../docs/proxy.md)）、Yahoo Finance 對非瀏覽器 `User-Agent` 一律回 429（因此固定偽裝瀏覽器 UA）。這些都是對方站台當下的行為，沒有官方文件保證不會再變。
 - **影響**：若 TPEx 未來也開始封鎖 Deno Deploy 的出站 IP range、或 Yahoo 加強 bot 偵測（例如需要 JS challenge、更嚴格的 header 檢查），`data5`（`TpexProvider`）／`data6`（`YahooProvider`）會在沒有任何預警的情況下開始失敗，而目前沒有任何自動化健康檢查或告警機制會發現這件事，只能靠使用者回報「查不到資料」。
-- **建議**：`data5`/`data6` 實作時，provider 對 proxy 回傳的非預期狀態（302/403/429/5xx）要有清楚的錯誤訊息（而非籠統的網路錯誤），方便未來快速定位是不是上游又擋人；有餘力可以考慮加一個簡單的排程（例如 GitHub Actions cron）定期 curl 這兩個 proxy 端點，失敗時發通知，及早發現上游規則變動。
+- **現況（2026-07-22 更新）**：`data5`/`data6` 已完成。provider 對非預期狀態已有明確錯誤訊息——`TpexProvider` throw `TPEx 請求失敗：HTTP {status}` / `TPEx 查詢失敗：{stat}`；`YahooProvider` 所有 symbol 後綴皆失敗時 throw `Yahoo 查詢失敗（{stockNo}）：{description 或 HTTP status}`，方便日後快速判斷是不是上游又擋人。但**定期健康檢查／告警仍未實作**（此則技術債的核心未解）。
+- **建議**：加一個簡單的排程（例如 GitHub Actions cron）定期 curl 這兩個 proxy 端點（TPEx 個股、Yahoo `.TW`/`.TWO`），失敗時發通知，及早發現上游規則變動，而非等使用者回報。
+
+## 三來源成交量口徑不一致（Yahoo 略低），跨來源查詢同一檔會有量能落差
+
+- **來源任務**：[data6](task-pool/data6.md)（實作於本次 session，2026-07-22）
+- **狀況**：三個 provider 的量能單位雖已統一為「股數」（TWSE 原始股數、TPEx `成交仟股`×1000、Yahoo 原始股數），但**口徑不同**：實測 2330 於 2024-09-02，TWSE 回 19,272,593 股、Yahoo 回 18,646,835 股，OHLC 完全一致但 Yahoo 量能明顯偏低——Yahoo 的 chart API 不含盤後定價／鉅額交易等部分成交。目前 `App.tsx` 固定用 TWSE，尚未觸發此問題。
+- **影響**：等 [data7](task-pool/data7.md)（自動選源／長區間切源）上線後，同一檔股票在不同區間可能由不同來源提供資料（例如短區間走 TWSE、長區間走 Yahoo），量能子 pane 會在切換來源的分界出現不連續的小幅落差（OHLC 不受影響）。使用者若拿量能做判斷可能誤解為異常。
+- **建議**：data7 實作切源時，(1) 在 UI 明確標示目前資料來源，讓使用者知道量能口徑可能不同；(2) 評估是否統一「同一次查詢只用單一來源」避免同一張圖混用多來源量能；(3) 若要跨來源拼接，於文件／tooltip 註明 Yahoo 量能偏低的成因，避免誤判。
 
 ## ~~vite 降版至 ^6.4.3~~（已解決：2026-07-21 升級回 vite@8）
 
