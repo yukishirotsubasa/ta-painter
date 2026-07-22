@@ -9,8 +9,6 @@
 ```text
 responsive1 -> responsive2
 responsive1 -> responsive3
-infra2 -> data5
-infra2 -> data6 -> data7
 share1 -> share2
 share3 -> share4
 share3 -> share5
@@ -22,11 +20,11 @@ share3 -> share5
 
 ### infra Module
 
-部署與 CORS 代理基礎設施：GitHub Pages 部署流程、Cloudflare Worker proxy。
+部署與 CORS 代理基礎設施：GitHub Pages 部署流程、CORS proxy（Deno Deploy）。
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [infra2](task-pool/infra2.md) | 等待 | Medium | - | Cloudflare Worker CORS proxy 部署完成，`curl` 帶 Origin header 打 `/proxy/tpex`、`/proxy/yahoo` 均回應正確資料且含 CORS header |
+| [infra2](task-pool/infra2.md) | 完成 | Medium | - | CORS proxy 部署完成（原規劃 Cloudflare Worker，實測 TPEx 封鎖其出站 IP 後改用 Deno Deploy，見 [docs/proxy.md](../docs/proxy.md)），`curl` 帶 Origin header 打 `/proxy/tpex?path=...`、`/proxy/yahoo?path=...` 均回應正確資料且含 CORS header |
 
 ### data Module
 
@@ -107,6 +105,7 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 - `design.md` — 專案整體設計文件（Context/技術棧/目錄結構/核心模組設計/待驗證項目，屬**規劃**文件，不代表目前已實作狀態）
 - `technical-debt.md` — 已知技術債清單
 - `../docs/deployment.md` — 實際部署設定（GitHub Pages workflow、本機開發指令）
+- `../docs/proxy.md` — 已實作 CORS proxy（`worker/`，Deno Deploy，`/proxy/{tpex|yahoo}?path=...`）
 - `../docs/data-layer.md` — 已實作資料層行為（provider registry、TwseProvider、逐月節流查詢、localStorage 快取）
 - `../docs/indicators.md` — 已實作指標架構（IndicatorDefinition/registry、MA/布林通道/MACD 指標、指標清單 UI）
 - `../docs/drawing.md` — 已實作畫線模組（TrendLinePrimitive、正式 DrawingController：模式切換、按下拖曳、多線陣列管理、切股清除、選取刪除單條線）

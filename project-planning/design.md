@@ -8,7 +8,8 @@
 
 - **TWSE（上市）** `STOCK_DAY` 官方 API 實測回應帶 `access-control-allow-origin: *`，瀏覽器可直接 fetch，**不需 proxy**。缺點：一次只回傳查詢月份當月資料，長區間要逐月發送多次請求。
 - **TPEx（上櫃）** 官方 API（舊版 `dailyQuotes` 與新版 OpenAPI）實測**皆無** CORS header，瀏覽器直接 fetch 會被封鎖。
-- TPEx 部分改用自建 **Cloudflare Worker** 當 CORS proxy 轉發；同時把 **Yahoo Finance** 資料源（同樣走這個 proxy）納入，作為「一次可拿長區間資料、查詢快」的來源，官方資料則保留為「較準確但長區間查詢慢、需節流」的來源，長區間查詢官方源時 UI 需顯示等待提示。
+- TPEx 部分改用自建 CORS proxy（`worker/`）轉發；同時把 **Yahoo Finance** 資料源（同樣走這個 proxy）納入，作為「一次可拿長區間資料、查詢快」的來源，官方資料則保留為「較準確但長區間查詢慢、需節流」的來源，長區間查詢官方源時 UI 需顯示等待提示。
+- **[infra2](task-pool/infra2.md) 實作後修正**：proxy 原規劃用 Cloudflare Worker，但實測發現 TPEx 會擋 Cloudflare Workers 的出站 IP range（302 loop 到 `/errors`，與 UA/Referer 偽裝無關），改用 **Deno Deploy**；上游路徑也因 Deno Deploy 的靜態檔案層會攔截網址結尾像靜態資源的請求（TPEx 舊版 API 是 `.php`）而改用 `?path=` query 參數傳遞，而非直接拼在路徑上。細節見 [`docs/proxy.md`](../docs/proxy.md)。
 
 已用官方文件（lightweight-charts v5.2 `IChartApi` 文件）驗證 `takeScreenshot()`、`panes()`、`addSeries()`、`removeSeries()`、`subscribeClick()`、`subscribeCrosshairMove()` 皆真實存在，可作為核心圖表/畫線/截圖機制的技術基礎。
 
@@ -16,7 +17,7 @@
 
 - **前端**：React + Vite + TypeScript，部署 GitHub Pages
 - **圖表庫**：`lightweight-charts@^5.0.x`（需 v5，v4 API 完全不同，無 `panes()`/primitive 機制）
-- **CORS Proxy**：Cloudflare Worker（獨立小專案，只做轉發+加 CORS header，host allowlist 限制在 TPEx 與 Yahoo）
+- **CORS Proxy**：Deno Deploy（獨立小專案，只做轉發+加 CORS header，host allowlist 限制在 TPEx 與 Yahoo；原規劃 Cloudflare Worker，實作後因 TPEx 封鎖其出站 IP 而改用 Deno Deploy，見 [`docs/proxy.md`](../docs/proxy.md)）
 - **狀態管理**：zustand（輕量，符合這種單頁圖表應用規模）
 - **URL 狀態編碼**：`lz-string`（`compressToEncodedURIComponent`），比純 base64 JSON 壓縮率高、比 `pako` 輕量，且輸出天生 URL-safe
 
@@ -45,13 +46,15 @@ D:\code\TA Painter\
 │   │   │       ├── appState.ts           # zustand store
 │   │   │       └── schema.ts             # zod schema（含版本欄位 v:1）
 │   │   └── hooks/                # useResponsive, useShare
-├── worker/                       # Cloudflare Worker CORS proxy，獨立部署
-│   ├── src/index.ts
-│   └── wrangler.toml
+├── worker/                       # Deno Deploy CORS proxy，獨立部署
+│   ├── main.ts                    # Deno Deploy entrypoint（Deno.serve）
+│   ├── handler.ts                 # 核心邏輯（resolveProxyTarget + handleRequest）
+│   ├── handler_test.ts
+│   └── deno.json
 └── .github/workflows/deploy-pages.yml   # 只監聽 web/** 變更，build+deploy 到 GH Pages
 ```
 
-`web/` 與 `worker/` 是不同 runtime，分開資料夾各自獨立部署（worker 用 `wrangler deploy` 手動/獨立流程，不掛在 GH Pages workflow 上）。
+`web/` 與 `worker/` 是不同 runtime，分開資料夾各自獨立部署（worker 透過 Deno Deploy 的 GitHub 連動自動部署，push 到 `main` 就會重新部署，不掛在 GH Pages workflow 上，細節見 [`docs/proxy.md`](../docs/proxy.md)）。
 
 ## 核心模組設計
 
@@ -67,7 +70,7 @@ D:\code\TA Painter\
 
 **RWD**：斷點 `>=1024px` 桌面（側邊欄常駐指標面板+圖例）／`<1024px` 行動平板（指標面板收合為 bottom sheet，精簡工具列，圖例用可橫向滑動 chip list）。用 `useResponsive`（`matchMedia`）驅動佈局切換並主動觸發圖表 resize。
 
-**Cloudflare Worker**：`/proxy/{tpex|yahoo}/...` 路徑白名單轉發到對應官方 host 並加 CORS header，不接受任意 `?url=` 目標（避免開放代理風險）。
+**CORS Proxy（Deno Deploy）**：`/proxy/{tpex|yahoo}?path=<url-encoded 上游路徑+query>` 白名單轉發到對應官方 host 並加 CORS header，`path` 必須是 `/` 開頭的相對路徑，不接受任意目標（避免開放代理風險）。實作細節、平台選型變動原因見 [`docs/proxy.md`](../docs/proxy.md)。
 
 ## 待驗證項目（開發過程中需 spike 驗證，不確定的官方 API 邊界）
 
