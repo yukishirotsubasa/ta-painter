@@ -54,12 +54,14 @@ class DrawingController {
 
 ### 按下拖曳互動（桌面與行動統一）
 
-- **開啟（`setEnabled(true)`）**：`chart.applyOptions({ handleScroll: false, handleScale: false, crosshair: { mode: CrosshairMode.Normal } })` 關閉原生 pan/zoom（含觸控），並在 `container` 上掛原生 `mousedown`/`touchstart`/`touchmove`/`touchend`/`touchcancel` 監聽器，`window` 上掛 `mouseup`，並 `chart.subscribeCrosshairMove()`。crosshair 模式額外切成 `Normal`（drawing5 觸控驗證修正）：lightweight-charts 預設 `CrosshairMode.Magnet` 會把 `subscribeCrosshairMove` 回傳的座標吸附到當下時間點最近那根 K 棒的**收盤價**，而非滑鼠/手指的原始座標；`onCrosshairMove` 直接拿這個座標當拖曳終點，會跟用原始座標算的起點（見下）不一致，造成拖出的線終點偏移到收盤價位置（長上下影線的 K 棒上偏移量明顯，十字星上幾乎為零）。桌面滑鼠因為有原生十字線同步可見不易察覺，觸控時手指擋住畫面、放開瞬間線才「跳」到收盤價位置，才被使用者實測發現。
+- **開啟（`setEnabled(true)`）**：`chart.applyOptions({ handleScroll: false, handleScale: false, crosshair: { mode: CrosshairMode.Normal }, trackingMode: { exitMode: TrackingModeExitMode.OnTouchEnd } })` 關閉原生 pan/zoom（含觸控），並在 `container` 上掛原生 `mousedown`/`touchstart`/`touchmove`/`touchend`/`touchcancel` 監聽器，`window` 上掛 `mouseup`，並 `chart.subscribeCrosshairMove()`。drawing5 觸控驗證發現並修正了兩個各自獨立、疊加造成偏移的問題：
+  1. **crosshair Magnet 吸附**（第一輪修正）：lightweight-charts 預設 `CrosshairMode.Magnet` 會把 `subscribeCrosshairMove` 回傳的座標吸附到當下時間點最近那根 K 棒的**收盤價**，而非滑鼠/手指的原始座標；`onCrosshairMove` 直接拿這個座標當拖曳終點，會跟用原始座標算的起點（見下）不一致，造成拖出的線終點偏移到收盤價位置（長上下影線的 K 棒上偏移量明顯，十字星上幾乎為零）。改成 `CrosshairMode.Normal` 解決。
+  2. **trackingMode 跨手勢殘留**（第二輪修正，影響更大）：觸控長按拖曳依賴 lightweight-charts 內建的 tracking mode，其 `trackingMode.exitMode` 預設是 `OnNextTap`——放開手指（touchend）並不會真正結束 tracking mode，要等到下一次「單純點擊（非拖曳）」才會結束。畫線模式每次操作都是「長按→拖曳→放開」，中間從未插入單純點擊，導致 tracking mode 從頭到尾沒斷過：第二條線起，庫內部的 `touchStartEvent` 偵測到 tracking mode 還在，不會用這次觸點當基準，而是把「上一條線放開當下的 crosshair 座標」當成新的追蹤基準點，後續 `touchMoveEvent` 用「基準點 +（目前觸點－這次 touchstart 座標）」的差值疊加公式算座標，等於把上一條線結束的位置錯誤地混進這條線的計算——只有第一條線（tracking mode 全新啟動、基準點=起點=觸點本身）不受影響，第二條開始每條線的偏移還會累加放大。改成 `TrackingModeExitMode.OnTouchEnd` 讓每次放開手指就真正結束 tracking mode，下一條線的起點就是全新的 1:1 觸點座標，不再帶著前一條線的尾巴。使用者在真實觸控裝置上重新驗證確認偏移問題已解決。
 - **按下**：因 chart API 沒有「按下」事件可訂閱，起點座標改用 `chart.timeScale().coordinateToTime(x)` + `series.coordinateToPrice(y)` 自行換算（`x`/`y` 為相對 `container` 的座標）；只接受 y 落在主圖（K 線）pane 高度內（`chart.panes()[0].getHeight()`）的按下，避免用量能 pane 的 y 座標誤套主圖價格軸。
 - **拖曳中**：`subscribeCrosshairMove` 取得即時座標，只要處於拖曳狀態就持續更新終點畫出預覽線（第一次移動時才真正 `new TrendLinePrimitive()` + `attachPrimitive()`，存在 `activeLine`，尚未進入 `lines` 陣列）。
 - **放開**：`mouseup`（掛在 `window`，避免放開時游標已離開 canvas 而漏接）/`touchend`/`touchcancel` 把 `activeLine` push 進內部 `lines: TrendLinePrimitive[]` 陣列並清空 `activeLine`/`anchor`/`dragging`，該線的 `points` 維持在放開當下的座標不再更新。**每次完整拖曳都會產生一條新線**，不會覆蓋先前已定案的線（drawing1 spike 版本用單一 `trendLineRef` 會互相覆蓋，drawing2 已改為陣列管理）。
 - 另掛一個 `touchmove` 監聽器（`{ passive: false }`），僅在拖曳中呼叫 `preventDefault()`，避免瀏覽器原生觸控捲動搶走拖曳手勢。
-- **關閉（`setEnabled(false)`）**：`handleScroll`/`handleScale` 恢復為 `true`，`crosshair.mode` 恢復為 `CrosshairMode.Magnet`（還原畫線模式以外的預設吸附手感），unsubscribe 所有監聽器（含 drawing4 新增的 `keydown`）；若關閉當下有未定案的拖曳中的線（`activeLine`）會被捨棄（`detachPrimitive` + 不 push 進陣列），已定案的線（`lines` 陣列內）不受影響、畫面上維持顯示；同時清除目前的選取狀態（見下）。
+- **關閉（`setEnabled(false)`）**：`handleScroll`/`handleScale` 恢復為 `true`，`crosshair.mode` 恢復為 `CrosshairMode.Magnet`、`trackingMode.exitMode` 恢復為 `TrackingModeExitMode.OnNextTap`（還原畫線模式以外的預設手感），unsubscribe 所有監聽器（含 drawing4 新增的 `keydown`）；若關閉當下有未定案的拖曳中的線（`activeLine`）會被捨棄（`detachPrimitive` + 不 push 進陣列），已定案的線（`lines` 陣列內）不受影響、畫面上維持顯示；同時清除目前的選取狀態（見下）。
 
 ### 選取與刪除單條線（drawing4）
 
@@ -100,7 +102,7 @@ class DrawingController {
 
 **drawing5（行動觸控人工驗證，正式部署站台）**：使用者在真實觸控裝置上對正式部署站台實測，回報三項結果：
 
-1. 觸控拖曳建立線條：長按（觸發 lightweight-charts 內建的 tracking mode）可開始畫線，拖曳中預覽線正確跟著手指移動，放開後定案——流程本身可行；但**線條終點座標偏移過多**，根因即上一節所述的 `CrosshairMode.Magnet` 座標吸附問題，已在本次 session 修正（`setEnabled` 切換 crosshair 模式）。
+1. 觸控拖曳建立線條：長按（觸發 lightweight-charts 內建的 tracking mode）可開始畫線，拖曳中預覽線正確跟著手指移動，放開後定案——流程本身可行；但**線條終點座標偏移過多**，且偏移會隨著連續畫多條線越畫越明顯。分兩輪修正：第一輪只切 `CrosshairMode.Normal` 解決了第一條線的吸附偏移，但使用者接續測試（畫 1→2、3→1、4→1 三條線）發現第 2、3 條線的**終點**仍明顯偏移、且偏移量遞增；進一步分析找到第二個獨立根因——`trackingMode.exitMode` 預設 `OnNextTap` 造成的跨手勢座標基準污染（詳見上一節）——改成 `TrackingModeExitMode.OnTouchEnd` 後，使用者在真實觸控裝置重新驗證確認偏移已完全解決。
 2. 觸控端選取線條比桌面容易命中，但**沒有任何 UI 可以刪除選取中的單條線**——`deleteSelectedLine()` 目前只綁在 `window` 的 `keydown`（`Delete`/`Backspace`），觸控裝置沒有實體鍵盤，選到線也無法刪除。使用者確認此限制暫不處理，記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#觸控裝置無法刪除選取中的單條線缺少刪除-ui) 待後續評估。
 3. 縮放圖表（zoom）的線條錨定、切換股票代號後畫線自動清除，觸控環境下皆正常運作，符合 drawing2/drawing3 桌面端已驗證的行為。
 
