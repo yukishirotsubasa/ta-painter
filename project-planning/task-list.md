@@ -9,8 +9,8 @@
 ```text
 responsive1 -> responsive2
 responsive1 -> responsive3
-infra2 -> data5
-infra2 -> data6 -> data7
+data5
+data6 -> data7
 share1 -> share2
 share3 -> share4
 share3 -> share5
