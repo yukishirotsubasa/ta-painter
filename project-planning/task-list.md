@@ -7,18 +7,14 @@
 ## Suggested Implementation Order
 
 ```text
-chart3
-drawing3
-drawing4
-drawing3 -> drawing5
-drawing4 -> drawing5
+chart3 -> drawing3 -> drawing4 -> drawing5
+chart3 -> responsive1 -> responsive2
+responsive1 -> responsive3
 infra2 -> data5
 infra2 -> data6 -> data7
 share1 -> share2
 share3 -> share4
 share3 -> share5
-chart3 -> responsive1 -> responsive2
-responsive1 -> responsive3
 ```
 
 ---
