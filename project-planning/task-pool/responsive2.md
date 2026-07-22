@@ -2,11 +2,11 @@
 
 ## 說明
 
-行動/平板版下，指標控制面板收合成 bottom sheet（或漢堡選單觸發的 overlay panel），預設只顯示圖表+精簡工具列（股票代號、分享按鈕、畫線模式切換）。圖例（已啟用指標）用可橫向滑動的 chip 列表呈現，點擊 chip 展開該指標參數的 bottom sheet。
+行動/平板版下，側邊欄（sidebar1 的設定區塊：資料源、指標、畫線）收合成 bottom sheet（或漢堡選單觸發的 overlay panel），預設只顯示圖表+精簡工具列（股票代號、分享按鈕、畫線模式切換）。圖例（已啟用指標）用可橫向滑動的 chip 列表呈現，點擊 chip 展開該指標參數的 bottom sheet。複用 sidebar 的設定區塊內容，僅改變其行動版容器呈現。
 
 ## 依賴
 
-responsive1, indicator5
+responsive1, sidebar1
 
 ## 驗收方式
 

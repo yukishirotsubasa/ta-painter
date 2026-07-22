@@ -2,7 +2,7 @@
 
 ## 說明
 
-App 啟動時解析 `location.hash`（`#s=<lz-string編碼>`），成功解碼後依序：設定 symbol/provider → 觸發資料抓取 → 資料到齊後依 `indicators` 陣列從 registry 逐一 mount → 依 `lines` 陣列重建 `TrendLinePrimitive` 並 attach。使用者互動後用 `history.replaceState` 同步更新 hash。「分享」按鈕即複製目前網址列。
+App 啟動時解析 `location.hash`（`#s=<lz-string編碼>`），成功解碼後依序：設定 symbol/provider → 觸發資料抓取 → 資料到齊後依 `indicators` 陣列從 registry 逐一 mount → 依 `lines` 陣列重建 `TrendLinePrimitive` 並 attach。使用者互動後用 `history.replaceState` 同步更新 hash。「分享」按鈕即複製目前網址列。還原時 `stockNo` 由外部（非 `ChartToolbar` 自身）改變，需讓 `ChartToolbar` 同步顯示還原後的代號（加 `useEffect(() => setDraft(stockNo), [stockNo])` 或改全受控，消解對應技術債）。
 
 ## 依賴
 
