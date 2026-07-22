@@ -14,16 +14,26 @@ interface ProxyTarget {
   pathAndQuery: string;
 }
 
-/** '/proxy/tpex/foo?bar=1' -> { host: 'www.tpex.org.tw', pathAndQuery: '/foo?bar=1' }；不在 allowlist 內回傳 null。 */
+/**
+ * '/proxy/tpex?path=/foo?bar=1' -> { host: 'www.tpex.org.tw', pathAndQuery: '/foo?bar=1' }；不在 allowlist 內或缺少 path 回傳 null。
+ *
+ * 上游路徑透過 `path` query 參數傳遞，而非直接拼在我方路徑上：Deno Deploy 的靜態檔案層會攔截
+ * 網址結尾像靜態資源（例如 TPEx 舊版 API 的 `.php`）的請求，直接回平台層 404、根本不會進到這支
+ * handler（curl 實測驗證），因此上游路徑不能出現在我方的 pathname 裡。
+ */
 export function resolveProxyTarget(url: URL): ProxyTarget | null {
-  const match = /^\/proxy\/(tpex|yahoo)(\/.*)?$/.exec(url.pathname);
+  const match = /^\/proxy\/(tpex|yahoo)\/?$/.exec(url.pathname);
   if (!match) {
     return null;
   }
 
+  const path = url.searchParams.get('path');
+  if (!path || !path.startsWith('/')) {
+    return null;
+  }
+
   const host = ALLOWED_HOSTS[match[1]];
-  const path = match[2] ?? '/';
-  return { host, pathAndQuery: `${path}${url.search}` };
+  return { host, pathAndQuery: path };
 }
 
 function withCors(response: Response): Response {
