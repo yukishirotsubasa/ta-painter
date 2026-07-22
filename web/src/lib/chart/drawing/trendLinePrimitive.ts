@@ -5,7 +5,6 @@ import type {
   IPrimitivePaneView,
   ISeriesApi,
   ISeriesPrimitive,
-  PrimitiveHoveredItem,
   SeriesAttachedParameter,
   SeriesType,
   Time,
@@ -26,7 +25,6 @@ const LINE_COLOR = '#f5a623';
 const LINE_WIDTH = 2;
 const SELECTED_LINE_WIDTH = 3;
 const SELECTED_HANDLE_RADIUS = 4;
-const HIT_TEST_TOLERANCE_PX = 6;
 
 class TrendLinePaneRenderer implements IPrimitivePaneRenderer {
   private readonly p1: PixelPoint | null;
@@ -110,19 +108,6 @@ function toPixelPoint(
   return { x, y };
 }
 
-/** 點到線段的最短像素距離（用於點擊命中判定）。 */
-function distanceToSegment(x: number, y: number, p1: PixelPoint, p2: PixelPoint): number {
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const lengthSq = dx * dx + dy * dy;
-  if (lengthSq === 0) return Math.hypot(x - p1.x, y - p1.y);
-
-  const t = Math.max(0, Math.min(1, ((x - p1.x) * dx + (y - p1.y) * dy) / lengthSq));
-  const projX = p1.x + t * dx;
-  const projY = p1.y + t * dy;
-  return Math.hypot(x - projX, y - projY);
-}
-
 /**
  * 畫線 spike：儲存邏輯座標（time+price）而非 pixel，
  * paneView.update() 內即時轉換，確保縮放/resize/pan 後線條不跑位。
@@ -157,16 +142,6 @@ export class TrendLinePrimitive implements ISeriesPrimitive<Time> {
     if (this.selected === selected) return;
     this.selected = selected;
     this.requestUpdateFn?.();
-  }
-
-  /** 判斷像素座標 (x, y) 是否落在線段附近（容許誤差 `HIT_TEST_TOLERANCE_PX`），供點擊選取使用。 */
-  hitTest(x: number, y: number): PrimitiveHoveredItem | null {
-    if (!this.chart || !this.series || !this.points) return null;
-    const p1 = toPixelPoint(this.chart, this.series, this.points[0]);
-    const p2 = toPixelPoint(this.chart, this.series, this.points[1]);
-    if (!p1 || !p2) return null;
-    if (distanceToSegment(x, y, p1, p2) > HIT_TEST_TOLERANCE_PX) return null;
-    return { cursorStyle: 'pointer', externalId: 'trend-line', zOrder: 'normal' };
   }
 
   updateAllViews(): void {

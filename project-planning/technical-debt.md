@@ -33,8 +33,9 @@
 - **建議**：實作 share2 時，在 `ChartToolbar.tsx` 加一個 `useEffect(() => setDraft(stockNo), [stockNo])`，或改用「以 `stockNo` prop 直接控制 input 顯示、`draft` 只在使用者主動輸入時才 diverge」的完全受控寫法。
 - **對應任務**：[share2](task-pool/share2.md) / [symbol2](task-pool/symbol2.md)（兩者皆會由外部改變 `stockNo`，屆時一併加同步）。
 
-## 畫線選取的點擊命中容差太小，實測難以選中線條
+## ~~畫線選取的點擊命中容差太小，實測難以選中線條~~（已解：drawing6 移除畫布點擊選取，2026-07-23）
 
+- **決策／解法**：drawing6 直接**移除整條畫布點擊選取路徑**（`DrawingController.hitTestLines()`、`TrendLinePrimitive.hitTest()`／`distanceToSegment`／`HIT_TEST_TOLERANCE_PX` 全數刪除），選取與刪除改由側邊欄清單（`getLines`/`onLinesChange`/`highlightLine`/`deleteLine` API，sidebar3 消費）。既然不再有畫布點擊命中判定，「容差太小、難以點中」的問題自然消失，不需要再調整容差。此則關閉。以下為原始紀錄。
 - **來源任務**：[drawing4](task-pool/drawing4.md)
 - **狀況**：`DrawingController`（`web/src/lib/chart/drawing/drawingController.ts`）的 `hitTestLines()` 目前是「由後往前找第一個命中就回傳」，命中判定委給 `TrendLinePrimitive.hitTest()`（`web/src/lib/chart/drawing/trendLinePrimitive.ts`），容差為 `HIT_TEST_TOLERANCE_PX = 6`（px）。使用者實測（真實瀏覽器，非本 repo 沙盒環境）回報：刪除單條線的功能可以正常運作，但線條太細，點擊很難準確選中。
 - **影響**：選取刪除單條線的核心功能已可用（unit test 涵蓋選取/刪除/清除選取等情境），但實際操作體驗不佳，容易點擊落空或（多線交叉時）選錯線。
@@ -49,6 +50,7 @@
 - **來源任務**：[drawing5](task-pool/drawing5.md)（行動觸控人工驗證，2026-07-22）
 - **狀況**：`DrawingController.deleteSelectedLine()`（`web/src/lib/chart/drawing/drawingController.ts`）只透過 `window` 的 `keydown` 監聽器觸發（`Delete`/`Backspace`，見 [`docs/drawing.md`](../docs/drawing.md)）。觸控裝置沒有實體鍵盤，選取到線條後（觸控端命中判定比桌面容易）沒有任何按鈕或手勢可以刪除該線；`DrawingController` 也沒有對外曝光選取狀態變化的回呼或 public 的 `deleteSelected()` 方法，React 層目前無從得知「目前有沒有線被選取」。
 - **影響**：觸控使用者可以畫線、選取線，但無法單獨刪除某一條，只能靠切換股票代號（`clearAll()`）整批清除。使用者實測後確認此限制暫不處理。
+- **現況（2026-07-23 更新，drawing6）**：drawing6 已解決此則的**根因**——`DrawingController` 現在對外曝光 `getLines()`/`onLinesChange()`/`deleteLine(id)`/`highlightLine(id)`，React 層可觀察線清單並刪除單條線（不再只綁鍵盤，桌面／觸控通用）；同時移除了舊的畫布點擊選取＋`window` `keydown`（`Delete`/`Backspace`）刪除路徑。**尚缺的只剩實際的清單 UI**：在 [sidebar3](task-pool/sidebar3.md) 的「畫線區塊」把這些 API 接成可檢視／高亮／刪除的面板之前，UI 上暫時只能整批清除。此則待 sidebar3 完成後關閉。
 - **建議**：討論過的候選方案（優先度依實作成本排序）：
   1. `ChartToolbar` 固定加一顆「刪除選取線」按鈕，平常 disabled，有選取時才 enabled；需要 `DrawingController` 曝光 selection-changed callback + public `deleteSelected()`。
   2. 選取線條後，在該線附近浮現一顆刪除／X 按鈕；體驗更直覺（所見即所刪），但需要把邏輯座標換算成畫面像素座標來定位按鈕，改動範圍較大。

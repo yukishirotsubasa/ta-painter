@@ -133,7 +133,7 @@ describe('DrawingController.clearAll', () => {
   });
 });
 
-describe('DrawingController selection & delete (drawing4)', () => {
+describe('DrawingController line list API (drawing6)', () => {
   let fakeWindow: ReturnType<typeof createFakeEventTarget>;
 
   beforeEach(() => {
@@ -151,60 +151,151 @@ describe('DrawingController selection & delete (drawing4)', () => {
     fakeWindow.dispatch('mouseup', {});
   }
 
-  it('clicking a plain point never creates a line (click-to-select stays side-effect free)', () => {
+  /** 第二條線：pixel (100,10) -> (150,60)，與 drawOneLine 的第一條線區隔。 */
+  function drawSecondLine(
+    container: ReturnType<typeof createFakeContainer>,
+    fireCrosshairMove: (param: MouseEventParams<Time>) => void,
+  ) {
+    container.dispatch('mousedown', { clientX: 100, clientY: 10 });
+    fireCrosshairMove({ point: { x: 150, y: 60 }, time: 150 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
+    fakeWindow.dispatch('mouseup', {});
+  }
+
+  it('getLines() exposes id + logical points for each finished line', () => {
+    const { chart, fireCrosshairMove } = createFakeChart();
+    const series = createFakeSeries(chart);
+    const container = createFakeContainer();
+    const controller = new DrawingController({ chart, series, container });
+
+    controller.setEnabled(true);
+    expect(controller.getLines()).toEqual([]);
+
+    // pixel (10,10) -> (50,60)：起點 coordinateToTime(10)=10 / coordinateToPrice(10)=990，終點 time 50 / coordinateToPrice(60)=940。
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+
+    const lines = controller.getLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0].id).toBe('line-1');
+    expect(lines[0].points).toEqual([
+      { time: 10, price: 990 },
+      { time: 50, price: 940 },
+    ]);
+  });
+
+  it('onLinesChange fires with the current line list after each draw', () => {
+    const { chart, fireCrosshairMove } = createFakeChart();
+    const series = createFakeSeries(chart);
+    const container = createFakeContainer();
+    const controller = new DrawingController({ chart, series, container });
+
+    const listener = vi.fn();
+    controller.setEnabled(true);
+    controller.onLinesChange(listener);
+
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0][0]).toHaveLength(1);
+
+    drawSecondLine(container, fireCrosshairMove);
+    expect(listener).toHaveBeenCalledTimes(2);
+    const secondSnapshot = listener.mock.calls[1][0];
+    expect(secondSnapshot.map((l: { id: string }) => l.id)).toEqual(['line-1', 'line-2']);
+  });
+
+  it('deleteLine(id) removes only that line, detaches its primitive, and notifies', () => {
+    const { chart, fireCrosshairMove } = createFakeChart();
+    const series = createFakeSeries(chart);
+    const container = createFakeContainer();
+    const controller = new DrawingController({ chart, series, container });
+
+    const listener = vi.fn();
+    controller.setEnabled(true);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+    drawSecondLine(container, fireCrosshairMove);
+    controller.onLinesChange(listener);
+
+    controller.deleteLine('line-1');
+
+    expect(series.detachPrimitive).toHaveBeenCalledTimes(1);
+    expect(series.detachPrimitive).toHaveBeenCalledWith(series.attachPrimitive.mock.calls[0][0]);
+    expect(controller.getLines().map((l) => l.id)).toEqual(['line-2']);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0][0].map((l: { id: string }) => l.id)).toEqual(['line-2']);
+  });
+
+  it('deleteLine(id) with an unknown id is a no-op (no detach, no notify)', () => {
+    const { chart, fireCrosshairMove } = createFakeChart();
+    const series = createFakeSeries(chart);
+    const container = createFakeContainer();
+    const controller = new DrawingController({ chart, series, container });
+
+    const listener = vi.fn();
+    controller.setEnabled(true);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+    controller.onLinesChange(listener);
+
+    controller.deleteLine('does-not-exist');
+
+    expect(series.detachPrimitive).not.toHaveBeenCalled();
+    expect(controller.getLines()).toHaveLength(1);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('clearAll() empties the list and notifies onLinesChange with an empty snapshot', () => {
+    const { chart, fireCrosshairMove } = createFakeChart();
+    const series = createFakeSeries(chart);
+    const container = createFakeContainer();
+    const controller = new DrawingController({ chart, series, container });
+
+    const listener = vi.fn();
+    controller.setEnabled(true);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+    drawSecondLine(container, fireCrosshairMove);
+    controller.onLinesChange(listener);
+
+    controller.clearAll();
+
+    expect(controller.getLines()).toEqual([]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0][0]).toEqual([]);
+  });
+
+  it('a plain click (no drag) creates no line and does not notify (canvas click-select removed)', () => {
     const { chart } = createFakeChart();
     const series = createFakeSeries(chart);
     const container = createFakeContainer();
     const controller = new DrawingController({ chart, series, container });
 
+    const listener = vi.fn();
     controller.setEnabled(true);
+    controller.onLinesChange(listener);
+
     click(container, 200, 200);
 
     expect(series.attachPrimitive).not.toHaveBeenCalled();
+    expect(controller.getLines()).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
   });
 
-  it('selecting a line and pressing Delete removes only that line', () => {
+  it('onLinesChange returns an unsubscribe that stops further notifications', () => {
     const { chart, fireCrosshairMove } = createFakeChart();
     const series = createFakeSeries(chart);
     const container = createFakeContainer();
     const controller = new DrawingController({ chart, series, container });
 
+    const listener = vi.fn();
     controller.setEnabled(true);
-    // 第一條線：pixel (10,10) -> (50,60)
+    const unsubscribe = controller.onLinesChange(listener);
+
     drawOneLine(container, fireCrosshairMove, fakeWindow);
-    // 第二條線：pixel (100,10) -> (150,60)
-    container.dispatch('mousedown', { clientX: 100, clientY: 10 });
-    fireCrosshairMove({ point: { x: 150, y: 60 }, time: 150 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
-    fakeWindow.dispatch('mouseup', {});
+    expect(listener).toHaveBeenCalledTimes(1);
 
-    expect(series.attachPrimitive).toHaveBeenCalledTimes(2);
-
-    // 點在第一條線中點 (30,35) 上，命中並選取第一條線。
-    click(container, 30, 35);
-    fakeWindow.dispatch('keydown', { key: 'Delete', preventDefault: vi.fn() });
-
-    expect(series.detachPrimitive).toHaveBeenCalledTimes(1);
-    expect(series.detachPrimitive).toHaveBeenCalledWith(series.attachPrimitive.mock.calls[0][0]);
+    unsubscribe();
+    drawSecondLine(container, fireCrosshairMove);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('clicking empty space clears the current selection so Delete does nothing', () => {
-    const { chart, fireCrosshairMove } = createFakeChart();
-    const series = createFakeSeries(chart);
-    const container = createFakeContainer();
-    const controller = new DrawingController({ chart, series, container });
-
-    controller.setEnabled(true);
-    drawOneLine(container, fireCrosshairMove, fakeWindow);
-
-    click(container, 30, 35); // 選取
-    click(container, 700, 500); // 點空白處，清除選取
-
-    fakeWindow.dispatch('keydown', { key: 'Delete', preventDefault: vi.fn() });
-
-    expect(series.detachPrimitive).not.toHaveBeenCalled();
-  });
-
-  it('drawing a new line while another line is selected leaves the selected line alone', () => {
+  it('highlightLine(id) marks the primitive selected and clears it on null / delete', () => {
     const { chart, fireCrosshairMove } = createFakeChart();
     const series = createFakeSeries(chart);
     const container = createFakeContainer();
@@ -212,18 +303,17 @@ describe('DrawingController selection & delete (drawing4)', () => {
 
     controller.setEnabled(true);
     drawOneLine(container, fireCrosshairMove, fakeWindow);
-    click(container, 30, 35); // 選取第一條線
+    const primitive = series.attachPrimitive.mock.calls[0][0] as { selected: boolean };
 
-    // 在別處拖出第二條線，不應影響第一條線的選取或內容。
-    container.dispatch('mousedown', { clientX: 200, clientY: 10 });
-    fireCrosshairMove({ point: { x: 250, y: 60 }, time: 250 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
-    fakeWindow.dispatch('mouseup', {});
+    controller.highlightLine('line-1');
+    expect(primitive.selected).toBe(true);
 
-    expect(series.attachPrimitive).toHaveBeenCalledTimes(2);
-    expect(series.detachPrimitive).not.toHaveBeenCalled();
+    controller.highlightLine(null);
+    expect(primitive.selected).toBe(false);
 
-    fakeWindow.dispatch('keydown', { key: 'Delete', preventDefault: vi.fn() });
-    expect(series.detachPrimitive).toHaveBeenCalledTimes(1);
-    expect(series.detachPrimitive).toHaveBeenCalledWith(series.attachPrimitive.mock.calls[0][0]);
+    // 高亮中的線被刪除後，內部高亮狀態重置，不應影響其後的高亮呼叫。
+    controller.highlightLine('line-1');
+    controller.deleteLine('line-1');
+    expect(() => controller.highlightLine(null)).not.toThrow();
   });
 });

@@ -7,7 +7,7 @@
 ## Suggested Implementation Order
 
 ```text
-drawing6 -> drawing7 -> share1 -> share2
+drawing7 -> share1 -> share2
 symbol1 -> symbol2 -> data7 -> sidebar1 -> sidebar2
 sidebar3 -> responsive1 -> responsive2 -> responsive3
 share3 -> share4 -> share5
@@ -65,7 +65,7 @@ ci1 -> ci2 -> ci3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [drawing6](task-pool/drawing6.md) | 等待 | Medium | - | `DrawingController` 加穩定 id 並曝光 `getLines()`/`onLinesChange`/`deleteLine(id)` 給 React；移除畫布點擊選取（hitTest/選取/鍵盤刪除），選取刪除改由側邊欄清單 |
+| [drawing6](task-pool/drawing6.md) | 完成 | Medium | - | `DrawingController` 加穩定 id 並曝光 `getLines()`/`onLinesChange`/`deleteLine(id)` 給 React；移除畫布點擊選取（hitTest/選取/鍵盤刪除），選取刪除改由側邊欄清單 |
 | [drawing7](task-pool/drawing7.md) | 等待 | Medium | drawing6 | 線資料加 `color`（可調）/`width`（僅入結構暫不開 UI），renderer 讀取；主畫面畫線工具列提供選色 UI |
 
 ### sidebar Module

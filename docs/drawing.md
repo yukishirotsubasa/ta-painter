@@ -1,6 +1,6 @@
 # 手動畫線（`web/src/lib/chart/drawing/`、`components/chart/ChartContainer.tsx`）
 
-> 本文件記錄**已實作**的畫線模組：`TrendLinePrimitive` 渲染機制（drawing1）+ 正式的 `DrawingController`（drawing2，模式切換、事件處理、多線陣列管理）+ 切換股票自動清除畫線（drawing3）+ 選取刪除單條線（drawing4）。整體規劃見 `project-planning/design.md`。
+> 本文件記錄**已實作**的畫線模組：`TrendLinePrimitive` 渲染機制（drawing1）+ 正式的 `DrawingController`（drawing2，模式切換、事件處理、多線陣列管理）+ 切換股票自動清除畫線（drawing3）+ **drawing6：每條線帶穩定 id、對外曝光清單 API（`getLines`/`onLinesChange`/`deleteLine`/`highlightLine`）供 React／側邊欄使用，並移除 drawing4 的畫布點擊選取／鍵盤刪除整條路徑**（選取與刪除改由側邊欄清單 sidebar3 負責）。整體規劃見 `project-planning/design.md`。
 
 ## `TrendLinePrimitive`（`lib/chart/drawing/trendLinePrimitive.ts`）
 
@@ -20,17 +20,16 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
   detached(): void;
   setPoints(points: [TrendLinePoint, TrendLinePoint] | null): void;
   setSelected(selected: boolean): void;
-  hitTest(x: number, y: number): PrimitiveHoveredItem | null;
   updateAllViews(): void;
   paneViews(): readonly IPrimitivePaneView[];
 }
 ```
 
 - 座標存邏輯座標 `{ time, price }` 而非 pixel。`TrendLinePaneView.update()`（`updateAllViews()` 觸發，庫在 viewport 變動時會自動呼叫）用 `chart.timeScale().timeToCoordinate()` + `series.priceToCoordinate()` 即時換算成 pixel 座標，確保縮放/resize/pan 後線條不跑位。
-- `TrendLinePaneRenderer.draw()` 用 `target.useBitmapCoordinateSpace()` + `ctx.scale(horizontalPixelRatio, verticalPixelRatio)` 畫線，顏色 `#f5a623`、寬度 2px（`selected` 為 `true` 時寬度變 3px，並在兩端畫半徑 4px 的實心圓把手，作為選取視覺提示）。
-- 純渲染邏輯，跟互動方式（拖曳）無關，只負責依 `points`/`selected` 畫線。
+- `TrendLinePaneRenderer.draw()` 用 `target.useBitmapCoordinateSpace()` + `ctx.scale(horizontalPixelRatio, verticalPixelRatio)` 畫線，顏色 `#f5a623`、寬度 2px（`selected` 為 `true` 時寬度變 3px，並在兩端畫半徑 4px 的實心圓把手，作為高亮視覺提示）。
+- 純渲染邏輯，跟互動方式（拖曳）無關，只負責依 `points`/`selected` 畫線。`selected` 這個視覺狀態在 drawing6 後改由 `DrawingController.highlightLine(id)`（側邊欄清單 hover／選取）驅動，而非畫布點擊。
 - 每條線各自是獨立的 `TrendLinePrimitive` 實例，由 `DrawingController` 建立、`attachPrimitive()`/`detachPrimitive()` 掛載與卸載。
-- `hitTest(x, y)`（drawing4）：把 `points` 換算成 pixel 座標後，計算 `(x, y)` 到線段的最短距離，容許誤差 `HIT_TEST_TOLERANCE_PX = 6`px 內視為命中，供 `DrawingController` 做點擊選取判定。回傳型別依 `lightweight-charts@5.2.0` 的 `ISeriesPrimitiveBase` 介面必須是 `PrimitiveHoveredItem | null`（非單純 `boolean`）：命中回傳 `{ cursorStyle: 'pointer', externalId: 'trend-line', zOrder: 'normal' }`，未命中回傳 `null`；`DrawingController.hitTestLines()` 用 `!== null` 判斷是否命中。實測發現此容差偏小、實際點擊常常落空，已記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條) 待後續優化。
+- **drawing4 的 `hitTest(x, y)` 已於 drawing6 移除**：畫布點擊命中判定（連同 `distanceToSegment`／`HIT_TEST_TOLERANCE_PX = 6`px 容差）原本供畫布點擊選取用，drawing6 移除整條點擊選取路徑後不再需要，一併刪除，消解了「命中容差太小」技術債。
 
 ## `DrawingController`（`lib/chart/drawing/drawingController.ts`）
 
@@ -41,16 +40,38 @@ interface DrawingControllerOptions {
   container: HTMLElement;
 }
 
+/** 對外曝光的單條畫線資料（drawing6，供 React／側邊欄檢視與操作）。 */
+interface DrawnLine {
+  id: string;
+  points: readonly [TrendLinePoint, TrendLinePoint] | null;
+}
+
 class DrawingController {
   constructor(options: DrawingControllerOptions);
   isEnabled(): boolean;
   setEnabled(enabled: boolean): void;
   clearAll(): void;
   dispose(): void;
+
+  // --- 清單 API（drawing6，供 React／側邊欄 sidebar3 使用） ---
+  getLines(): DrawnLine[];
+  onLinesChange(listener: (lines: DrawnLine[]) => void): () => void; // 回傳取消訂閱函式
+  deleteLine(id: string): void;
+  highlightLine(id: string | null): void;
 }
 ```
 
-`ChartContainer.tsx` 在建立 chart/series 後即 `new DrawingController({ chart, series: candlestickSeries, container })`（存進 ref），`drawingMode` prop 變動時呼叫 `setEnabled()`，元件卸載時呼叫 `dispose()`。
+`ChartContainer.tsx` 在建立 chart/series 後即 `new DrawingController({ chart, series: candlestickSeries, container })`（存進 ref），`drawingMode` prop 變動時呼叫 `setEnabled()`，`stockNo` prop 變動時呼叫 `clearAll()`，元件卸載時呼叫 `dispose()`。drawing6 新增的清單 API 目前尚未接上任何 UI（供 sidebar3 的「畫線區塊」清單消費）。
+
+### 清單 API（drawing6）
+
+`DrawingController` 內部把每條已定案的線存成 `{ id, primitive }`（`ManagedLine`），id 為 `line-${seq}`（session 內單調遞增、刪除後不重用，確保穩定）。曝光給 React／側邊欄的四個方法：
+
+- `getLines()`：回傳目前所有**已定案**線條的快照（`{ id, points }`，`points` 為邏輯座標 `time`/`price`），不含拖曳中未放開的 `activeLine`。
+- `onLinesChange(listener)`：訂閱線清單變化，回傳取消訂閱函式（內部以 `Set<listener>` 管理，支援多個訂閱者）。**畫線放開定案、`deleteLine()`、`clearAll()`** 三種會改變清單的操作都會以最新快照觸發所有 listener；純點擊（沒拖出線）與 `highlightLine()`（純視覺）不觸發。
+- `deleteLine(id)`：刪除指定 id 的線（`splice` 移除 + `series.detachPrimitive()` 卸載），只影響該條，其餘不受影響；找不到 id 則 no-op（不 detach、不觸發 `onLinesChange`）。若刪的是目前高亮中的線，內部高亮狀態一併重置。
+- `highlightLine(id | null)`：高亮指定 id 的線（沿用 `TrendLinePrimitive.setSelected(true)` 的加粗＋端點把手視覺），傳 `null` 取消高亮；相同目標重複呼叫為 no-op。高亮與畫線模式（`setEnabled`）獨立，非畫線模式下也可高亮。
+- `dispose()`：`setEnabled(false)` + `clearAll()` 之外，額外 `linesChangeListeners.clear()` 清掉所有訂閱者。
 
 ### 按下拖曳互動（桌面與行動統一）
 
@@ -61,20 +82,19 @@ class DrawingController {
 - **拖曳中**：`subscribeCrosshairMove` 取得即時座標，只要處於拖曳狀態就持續更新終點畫出預覽線（第一次移動時才真正 `new TrendLinePrimitive()` + `attachPrimitive()`，存在 `activeLine`，尚未進入 `lines` 陣列）。
 - **放開**：`mouseup`（掛在 `window`，避免放開時游標已離開 canvas 而漏接）/`touchend`/`touchcancel` 把 `activeLine` push 進內部 `lines: TrendLinePrimitive[]` 陣列並清空 `activeLine`/`anchor`/`dragging`，該線的 `points` 維持在放開當下的座標不再更新。**每次完整拖曳都會產生一條新線**，不會覆蓋先前已定案的線（drawing1 spike 版本用單一 `trendLineRef` 會互相覆蓋，drawing2 已改為陣列管理）。
 - 另掛一個 `touchmove` 監聽器（`{ passive: false }`），僅在拖曳中呼叫 `preventDefault()`，避免瀏覽器原生觸控捲動搶走拖曳手勢。
-- **關閉（`setEnabled(false)`）**：`handleScroll`/`handleScale` 恢復為 `true`，`crosshair.mode` 恢復為 `CrosshairMode.Magnet`、`trackingMode.exitMode` 恢復為 `TrackingModeExitMode.OnNextTap`（還原畫線模式以外的預設手感），unsubscribe 所有監聽器（含 drawing4 新增的 `keydown`）；若關閉當下有未定案的拖曳中的線（`activeLine`）會被捨棄（`detachPrimitive` + 不 push 進陣列），已定案的線（`lines` 陣列內）不受影響、畫面上維持顯示；同時清除目前的選取狀態（見下）。
+- **關閉（`setEnabled(false)`）**：`handleScroll`/`handleScale` 恢復為 `true`，`crosshair.mode` 恢復為 `CrosshairMode.Magnet`、`trackingMode.exitMode` 恢復為 `TrackingModeExitMode.OnNextTap`（還原畫線模式以外的預設手感），unsubscribe 拖曳相關的所有監聽器；若關閉當下有未定案的拖曳中的線（`activeLine`）會被捨棄（`detachPrimitive` + 不 push 進陣列），已定案的線（`lines` 陣列內）不受影響、畫面上維持顯示。**畫線模式開關不影響高亮狀態**（高亮由側邊欄透過 `highlightLine()` 獨立控制）。
 
-### 選取與刪除單條線（drawing4）
+### 選取與刪除：從畫布點擊改為側邊欄清單（drawing4 → drawing6）
 
-純粹靠既有的按下拖曳事件（`mousedown`/`touchstart` → `mouseup`/`touchend`）判斷，沒有新增額外的滑鼠事件監聽器，也沒有曝光任何新的公開 API（`DrawingController` 對外介面維持 `isEnabled`/`setEnabled`/`clearAll`/`dispose` 不變，選取狀態純粹是內部私有欄位）：
+drawing4 曾實作「畫布點擊選取 + 鍵盤 `Delete`/`Backspace` 刪除」，但實測有兩個問題：命中容差（6px）太小、桌面難以點中；觸控裝置沒有實體鍵盤、選到線也無法刪除（兩項技術債見 [`technical-debt.md`](../project-planning/technical-debt.md)）。**drawing6 移除整條畫布點擊選取路徑**，改由側邊欄清單（sidebar3）選取與刪除：
 
-- **點擊命中判定**：`mousedown`/`touchstart` 當下先用 `hitTestLines(x, y)` 對 `lines` 陣列由後往前找第一條 `TrendLinePrimitive.hitTest(x, y)` 命中的線（`hitTest` 容許誤差 6px，見上一節），存成 `pendingSelection` 候選，此時**還不會**真的選取。
-- **放開時判定是拖曳還是點擊**：`endDrag()` 若 `activeLine` 有值（代表這次真的拖出了一條新線），則維持原本的選取狀態不變、捨棄 `pendingSelection`；若 `activeLine` 為空（純點擊、沒有真的拖曳），才呼叫 `setSelectedLine(pendingSelection)`——命中線就選取該線，點空白處（`pendingSelection` 為 `null`）則清除目前選取。
-- **選取視覺**：`setSelectedLine()` 對舊選取線呼叫 `setSelected(false)`、新選取線呼叫 `setSelected(true)`，觸發 `TrendLinePrimitive` 重繪成加粗＋端點把手樣式（見上一節）。
-- **刪除**：`setEnabled(true)` 時額外在 `window` 掛 `keydown` 監聽器；有選取中的線時按下 `Delete` 或 `Backspace`（`event.preventDefault()`）呼叫 `deleteSelectedLine()`——用 `lines.indexOf()` 找到該線在陣列中的位置 `splice` 移除，並 `series.detachPrimitive()` 卸載，只影響選取的那一條，其餘線不受影響。
+- **已移除**：`DrawingController.hitTestLines()`、`pendingSelection`/`selectedLine` 私有欄位、`setSelectedLine()`/`deleteSelectedLine()`、`window` 的 `keydown` 監聽器，以及 `TrendLinePrimitive.hitTest()`（連同 `distanceToSegment`／`HIT_TEST_TOLERANCE_PX`）。`onMouseDown`/`onTouchStart` 不再做命中判定，`endDrag()` 簡化為「若這次拖出了線就 push 進 `lines` 並觸發 `onLinesChange`，純點擊則什麼都不做」。
+- **畫布點擊不再選取線段**，畫線（按下拖曳）與 pan/zoom 行為完全不受影響。
+- **選取／刪除改由清單 API 提供**（見上一節「清單 API」）：側邊欄用 `getLines()` + `onLinesChange()` 顯示所有畫線，`highlightLine(id)` 高亮 hover／選取的線，`deleteLine(id)` 刪除單條。此設計桌面／觸控通用（無需在畫布上精準點選），同時消解上述兩項技術債的根因。實際的清單 UI 由 sidebar3 實作，drawing6 只負責曝光 API。
 
 ### 線條管理與清除
 
-- `clearAll()`：捨棄未定案的 `activeLine`（如有），遍歷 `lines` 陣列逐一 `series.detachPrimitive()` 並清空陣列，同時清空選取狀態（`selectedLine = null`，因為原本選取的線可能已被 detach）。純記憶體狀態，不持久化，`detachPrimitive()` 是真的卸載而非隱藏，切回原本股票代號不會「復原」畫線。
+- `clearAll()`：捨棄未定案的 `activeLine`（如有），遍歷 `lines` 陣列逐一 `series.detachPrimitive()` 並清空陣列，同時清空高亮狀態（`highlightedLine = null`，因為原本高亮的線可能已被 detach），最後觸發 `onLinesChange`（drawing6）以最新（空）快照通知訂閱者。純記憶體狀態，不持久化，`detachPrimitive()` 是真的卸載而非隱藏，切回原本股票代號不會「復原」畫線。
 - **切股清除（drawing3）**：`ChartContainer.tsx` 新增 `stockNo` prop，`useEffect(() => { drawingControllerRef.current?.clearAll(); }, [stockNo])` 在 `stockNo` 變動時呼叫 `clearAll()`；`App.tsx` 把 `stockNo` state 往下傳。因為 effect 依賴 `[stockNo]`，首次掛載時也會呼叫一次（此時 `lines` 本來就是空陣列，無副作用）。
 - `dispose()`：`setEnabled(false)` + `clearAll()`，供 `ChartContainer` 卸載時呼叫，確保元件重建/卸載不殘留 primitive 或事件監聽器。
 
@@ -106,7 +126,14 @@ class DrawingController {
 2. 觸控端選取線條比桌面容易命中，但**沒有任何 UI 可以刪除選取中的單條線**——`deleteSelectedLine()` 目前只綁在 `window` 的 `keydown`（`Delete`/`Backspace`），觸控裝置沒有實體鍵盤，選到線也無法刪除。使用者確認此限制暫不處理，記錄在 [`technical-debt.md`](../project-planning/technical-debt.md#觸控裝置無法刪除選取中的單條線缺少刪除-ui) 待後續評估。
 3. 縮放圖表（zoom）的線條錨定、切換股票代號後畫線自動清除，觸控環境下皆正常運作，符合 drawing2/drawing3 桌面端已驗證的行為。
 
+**drawing6（清單 API + 移除畫布點擊選取）**：延續同一份 Browser pane canvas 環境限制（本節開頭所述），改用 `drawingController.test.ts` 的 fake-object unit test 驗證（`tsc -b` 通過、全測試 104 passed）。drawing4 那組「畫布點擊選取／鍵盤刪除」測試（測的是已移除的行為）換成 drawing6 的 8 個測試，涵蓋三項驗收：
+
+1. `getLines()` 正確回報 id（`line-1`/`line-2`…）與邏輯座標；`onLinesChange` 在**畫線放開、`deleteLine()`、`clearAll()`** 時各以最新快照觸發一次，純點擊與 `highlightLine()` 不觸發；`onLinesChange` 回傳的 unsubscribe 能停止後續通知。
+2. `deleteLine(id)` 只刪指定線（`series.detachPrimitive()` 呼叫對象正確）、反映在 `getLines()`；unknown id 為 no-op（不 detach、不通知）。`highlightLine(id)` 切換 `primitive.selected`、刪除高亮中的線後內部狀態正確重置。
+3. 純點擊（`mousedown`→`mouseup` 無 crosshair move）不建線、不通知（畫布點擊選取路徑已移除）；`setEnabled` 對 pan/zoom 的處理未動，畫線與 pan/zoom 行為不受影響。
+
+清單 API 尚未接上 UI（等 sidebar3），`ChartContainer` 的 wiring 未新增（既有 `drawingMode`/`stockNo`/`dispose` 呼叫不變）。
+
 ## 已知限制 / 尚未實作
 
-- **觸控裝置無法刪除選取中的單條線**：`DrawingController` 刪除邏輯只綁在 `window` 的 `keydown`（`Delete`/`Backspace`，見上）,觸控裝置沒有鍵盤可觸發，目前選取後沒有任何替代 UI（按鈕/手勢）可以刪除該線。drawing5 觸控實測發現後使用者確認暫不修，詳見 [`technical-debt.md`](../project-planning/technical-debt.md#觸控裝置無法刪除選取中的單條線缺少刪除-ui)。
-- **選取的點擊命中容差偏小**：目前 `HIT_TEST_TOLERANCE_PX = 6`px，真實瀏覽器實測反映難以點中線條；改善方向見 [`technical-debt.md`](../project-planning/technical-debt.md#畫線選取的點擊命中容差太小實測難以選中線條)。
+- **單條線刪除的 UI 尚未接上（等 sidebar3）**：drawing6 已把選取／刪除從畫布點擊改為清單 API（`getLines`/`onLinesChange`/`deleteLine`/`highlightLine`），並移除舊的鍵盤 `Delete`/`Backspace` 刪除。**在 sidebar3 的「畫線區塊」清單實作之前，UI 上暫時只能靠切換股票代號（`clearAll()`）整批清除**，無法刪除單一線條——這是預期中的 work-in-progress，非新技術債。drawing6 已消解舊有的「命中容差太小」「觸控無刪除 UI」兩項技術債的根因（見 [`technical-debt.md`](../project-planning/technical-debt.md)）。
