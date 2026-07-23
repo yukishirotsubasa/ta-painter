@@ -46,7 +46,7 @@ ci1 -> ci2 -> ci3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [symbol1](task-pool/symbol1.md) | 待確認 | Medium | - | 每週 cron GitHub Actions 抓 TWSE 上市（ISIN，分類白名單）+ TPEx 上櫃（MOPS CSV），輸出 `web/public/stock-list.json` 並 commit 回 repo（server 端抓取，無 CORS）；已對真實來源實跑產出 2205 檔，待 GitHub 上實跑 workflow 確認排程／commit／Pages 串接 |
+| [symbol1](task-pool/symbol1.md) | 完成 | Medium | - | 每週 cron GitHub Actions 抓 TWSE 上市（ISIN，分類白名單）+ TPEx 上櫃（MOPS CSV），輸出 `web/public/stock-list.json` 並 commit 回 repo（server 端抓取，無 CORS）；已實跑產出 2205 檔 |
 | [symbol2](task-pool/symbol2.md) | 等待 | Medium | symbol1 | `ChartToolbar` 載入清單，代號或名稱模糊搜尋 + 下拉建議 + 鍵盤選取，帶入代號與市場別；順帶修 `ChartToolbar` 不同步 `stockNo` 技術債 |
 
 ### indicator Module

@@ -33,6 +33,14 @@
 
 行為細節見 [`docs/stock-list.md`](../../docs/stock-list.md)。
 
-### 尚待確認
+### GitHub Actions 實跑驗證（2026-07-23）
 
-驗收項目 1、3 需要實際在 GitHub 上跑過才能確認：`workflow_dispatch` 手動執行成功、排程如期觸發、無變動時不產生空 commit，以及 `deploy-pages.yml` 的 `workflow_call` 串接是否正確發佈。目前僅在本機以真實來源驗證過抓取／解析／合併／序列化的完整流程。
+手動 `workflow_dispatch` 執行成功，輸出 `清單無變動（共 2205 檔），不寫檔。`——驗收項目 1、3 達成（無變動時走 `git status --porcelain` 的 early exit，不產生空 commit）。同時確認：
+
+- runner（Linux／Node 24 原生執行 `.ts`）產出與本機（Windows／Node 20 轉譯後）**完全相同的 2205 檔**，解析結果跨平台、跨 Node 版本一致
+- Node 24 內建型別剝除可直接跑 `.ts`，不需 `npm ci`、零外部依賴
+- GitHub runner 出站 IP 未被 TWSE ISIN／MOPS 阻擋（對照 `worker/` 因 TPEx 封鎖 Cloudflare Workers IP range 而改用 Deno Deploy 的經驗，這點並非理所當然）
+
+**尚未實跑到的路徑**：因 `changed=false`，`deploy` job 被 `if` 條件跳過，`update-stock-list` → `deploy-pages.yml` 的 `workflow_call` 串接尚未實際執行。不過該次 run 的 job graph 有畫出 `deploy / build`、`deploy / deploy` 兩個 skipped job，代表串接的**接線本身已通過 GitHub 驗證**（workflow 路徑、`on.workflow_call` 宣告、`ref` input 簽名皆正確），剩下的只是實際跑一次，待下次清單變動時自然發生。
+
+注意：透過 `workflow_call` 呼叫的可重用 workflow 是以巢狀 job 掛在呼叫方的 run 底下，**不會在 Deploy Pages 自己的執行歷史裡產生獨立紀錄**，屆時要在 Update Stock List 那次 run 內部查看。
