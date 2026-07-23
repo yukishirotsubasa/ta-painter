@@ -11,6 +11,17 @@
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
+  /*
+   * 疊層順序（數值越大越上層）。--z-chart-* 是 lightweight-charts 內部寫死的值，
+   * 我們不會套用它們，列在這裡只為讓完整順序一目了然、升級函式庫時方便對照：
+   *   --z-chart-canvas       1–2   圖表 canvas
+   *   --z-chart-pane-handle  49/50 pane 分隔線拖曳把手（_addResizableHandle）
+   */
+  --z-chart-canvas: 2; /* 參考用，勿套用 */
+  --z-chart-pane-handle: 50; /* 參考用，勿套用 */
+  --z-sidebar: 60; /* 覆蓋式側邊欄，必須高於 pane 把手才點得到 */
+  --z-dropdown: 70; /* 代號搜尋下拉，必須高於側邊欄 */
+
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;

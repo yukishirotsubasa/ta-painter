@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import {
   CandlestickSeries,
   createChart,
@@ -12,11 +12,20 @@ import { createPaneIndexAllocator } from '../../lib/chart/paneIndexAllocator';
 import { UP_COLOR, DOWN_COLOR, DEFAULT_DRAWING_LINE_COLOR } from '../../lib/chart/colors';
 import { getIndicator } from '../../lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorMountHandle, PaneIndexAllocator } from '../../lib/chart/indicators/types';
-import { DrawingController } from '../../lib/chart/drawing/drawingController';
+import { DrawingController, type DrawnLine } from '../../lib/chart/drawing/drawingController';
 import type { OhlcvBar } from '../../lib/data/types';
 import './ChartContainer.css';
 
+/**
+ * 圖表對外的指令式介面（sidebar3）：只曝光側邊欄真正需要的操作，
+ * 不把整個 `DrawingController` 交出去。share2 還原線條時在此加 `addLine()`。
+ */
+export interface ChartHandle {
+  deleteLine(id: string): void;
+}
+
 interface ChartContainerProps {
+  ref?: Ref<ChartHandle>;
   data: OhlcvBar[];
   indicators?: IndicatorInstance[];
   /** 開啟時關閉原生 pan/zoom，按下拖曳畫趨勢線（拖曳中即時預覽，放開定案）。 */
@@ -25,6 +34,10 @@ interface ChartContainerProps {
   drawingColor?: string;
   /** 股票代號，變更時清空目前所有畫線（drawing3）。 */
   stockNo?: string;
+  /** 線清單變動（新增／刪除／切股清除）時回報最新快照。 */
+  onLinesChange?: (lines: DrawnLine[]) => void;
+  /** 側邊欄目前選取的線，`null` 取消高亮。 */
+  highlightedLineId?: string | null;
 }
 
 /** pane 0 = K 線、pane 1 = 量能，指標的 separate-pane 配置從 pane 2 開始。 */
@@ -51,11 +64,14 @@ function toVolumeData(bars: OhlcvBar[]): HistogramData[] {
 }
 
 export function ChartContainer({
+  ref,
   data,
   indicators = [],
   drawingMode = false,
   drawingColor = DEFAULT_DRAWING_LINE_COLOR,
   stockNo,
+  onLinesChange,
+  highlightedLineId = null,
 }: ChartContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -63,7 +79,7 @@ export function ChartContainer({
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const paneIndexAllocatorRef = useRef<PaneIndexAllocator | null>(null);
   const mountedIndicatorsRef = useRef<Map<string, IndicatorMountHandle>>(new Map());
-  const drawingControllerRef = useRef<DrawingController | null>(null);
+  const internalDrawingControllerRef = useRef<DrawingController | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -71,7 +87,11 @@ export function ChartContainer({
     if (!container) return;
 
     const chart: IChartApi = createChart(container, {
-      autoSize: true,
+      // 不用 autoSize：改由下方自管的 ResizeObserver 明確 resize，
+      // 避免側邊欄收合/展開後圖表尺寸沒跟上（autoSize 開啟時 resize() 會被忽略，難以補救）。
+      autoSize: false,
+      width: container.clientWidth,
+      height: container.clientHeight,
       layout: {
         background: { color: 'transparent' },
         textColor: '#9ca3af',
@@ -97,19 +117,27 @@ export function ChartContainer({
       1,
     );
     chart.panes()[1]?.setHeight(VOLUME_PANE_HEIGHT);
-    drawingControllerRef.current = new DrawingController({
+    const drawingController = new DrawingController({
       chart,
       series: candlestickSeriesRef.current,
       container,
     });
+    internalDrawingControllerRef.current = drawingController;
+
+    // 只跟著容器實際尺寸走（視窗縮放）；側邊欄是覆蓋在圖表上的，收合不改變容器尺寸也不需要重繪。
+    const resizeObserver = new ResizeObserver(() => {
+      chart.resize(container.clientWidth, container.clientHeight);
+    });
+    resizeObserver.observe(container);
 
     return () => {
+      resizeObserver.disconnect();
       for (const handle of mountedIndicators.values()) {
         handle.dispose();
       }
       mountedIndicators.clear();
-      drawingControllerRef.current?.dispose();
-      drawingControllerRef.current = null;
+      drawingController.dispose();
+      internalDrawingControllerRef.current = null;
       chartRef.current = null;
       paneIndexAllocatorRef.current = null;
       candlestickSeriesRef.current = null;
@@ -152,16 +180,37 @@ export function ChartContainer({
   }, [data, indicators]);
 
   useEffect(() => {
-    drawingControllerRef.current?.setEnabled(drawingMode);
+    internalDrawingControllerRef.current?.setEnabled(drawingMode);
   }, [drawingMode]);
 
   useEffect(() => {
-    drawingControllerRef.current?.setDrawingColor(drawingColor);
+    internalDrawingControllerRef.current?.setDrawingColor(drawingColor);
   }, [drawingColor]);
 
   useEffect(() => {
-    drawingControllerRef.current?.clearAll();
+    internalDrawingControllerRef.current?.clearAll();
   }, [stockNo]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      deleteLine: (id: string) => internalDrawingControllerRef.current?.deleteLine(id),
+    }),
+    [],
+  );
+
+  useEffect(() => {
+    const controller = internalDrawingControllerRef.current;
+    if (!controller || !onLinesChange) return;
+
+    // 訂閱前先同步一次目前狀態，避免訂閱建立前已畫的線沒出現在清單。
+    onLinesChange(controller.getLines());
+    return controller.onLinesChange(onLinesChange);
+  }, [onLinesChange]);
+
+  useEffect(() => {
+    internalDrawingControllerRef.current?.highlightLine(highlightedLineId);
+  }, [highlightedLineId]);
 
   return <div ref={containerRef} className={`chart-container${drawingMode ? ' chart-container-drawing' : ''}`} />;
 }

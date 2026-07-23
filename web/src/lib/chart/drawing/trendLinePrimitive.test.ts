@@ -156,7 +156,7 @@ describe('TrendLinePrimitive line-level style (drawing7)', () => {
     expect(ctx.lineWidth).toBe(5);
   });
 
-  it('selected lines thicken relative to their own width and keep their own color for the handles', () => {
+  it('selected lines double their own width and keep their own color for the handles', () => {
     const primitive = attachedPrimitiveWithPoints({ color: '#ff0000', width: 5 });
     primitive.setSelected(true);
     primitive.updateAllViews();
@@ -164,7 +164,7 @@ describe('TrendLinePrimitive line-level style (drawing7)', () => {
     const { ctx, target } = createRecordingDrawTarget();
     primitive.paneViews()[0]?.renderer()?.draw(target as any);
 
-    expect(ctx.lineWidth).toBe(6);
+    expect(ctx.lineWidth).toBe(10);
     expect(ctx.fillStyle).toBe('#ff0000');
     expect(ctx.arc).toHaveBeenCalledTimes(2);
   });

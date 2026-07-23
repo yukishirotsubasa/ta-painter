@@ -1,0 +1,45 @@
+.data-source-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 4px 10px;
+}
+
+.data-source-panel-title {
+  font-size: 14px;
+  margin: 0;
+}
+
+.data-source-panel-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.data-source-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.data-source-panel-route,
+.data-source-panel-hint,
+.data-source-panel-warning {
+  font-size: 12px;
+  line-height: 140%;
+}
+
+.data-source-panel-route {
+  color: var(--text);
+}
+
+.data-source-panel-hint {
+  color: var(--accent);
+}
+
+.data-source-panel-warning {
+  color: #ef5350;
+}

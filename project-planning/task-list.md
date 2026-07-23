@@ -8,8 +8,7 @@
 
 ```text
 share1 -> share2
-data7 -> sidebar1 -> sidebar2
-sidebar3 -> responsive1 -> responsive2 -> responsive3
+responsive1 -> responsive2 -> responsive3
 share3 -> share4 -> share5
 ci1 -> ci2 -> ci3
 ```
@@ -31,7 +30,7 @@ ci1 -> ci2 -> ci3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [data7](task-pool/data7.md) | 等待 | Low | - | 資料源切換：預設 Yahoo（單次快查）／官方源依市場別路由 TWSE/TPEx（逐月抓取）；切官方顯示逐月等待提示（request 限流為程式內部節流，不顯示提示） |
+| [data7](task-pool/data7.md) | 完成 | Low | - | 資料源切換：預設 Yahoo（單次快查）／官方源依市場別路由 TWSE/TPEx（逐月抓取）；官方源固定顯示逐月等待提示（不分區間長短，`estimateSlow` 已移除）；request 限流為程式內部行為（代號送出 300ms debounce），不顯示提示 |
 
 ### chart Module
 
@@ -74,9 +73,9 @@ ci1 -> ci2 -> ci3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [sidebar1](task-pool/sidebar1.md) | 等待 | High | - | 版面重構「側邊欄 + 圖表」；側邊欄整體可折疊；`IndicatorPanel` 移入成可折疊「指標區塊」；折疊/展開後圖表正確 resize；畫線模式開關留主畫面 |
-| [sidebar2](task-pool/sidebar2.md) | 等待 | Medium | data7, symbol2 | 頂端資料源區塊：2 選項 Yahoo（預設）/ 官方（依市場別自動路由 TWSE/TPEx）；切官方顯示逐月等待提示（request 限流為程式內部節流，不顯示提示） |
-| [sidebar3](task-pool/sidebar3.md) | 等待 | Medium | drawing6 | 可折疊「畫線區塊」：列出所有畫線、點選高亮對應線、刪除單條（僅檢視+刪除，觸控/桌面通用）；折疊清單或側邊欄時自動取消選取 |
+| [sidebar1](task-pool/sidebar1.md) | 完成 | High | - | 版面重構「側邊欄 + 圖表」；側邊欄整體可折疊；`IndicatorPanel` 移入成可折疊「指標區塊」；畫線模式開關留主畫面。**實作時依人工驗證改為覆蓋式**：側邊欄絕對定位蓋在圖表上，收合/展開不改變圖表尺寸、不觸發 resize |
+| [sidebar2](task-pool/sidebar2.md) | 完成 | Medium | data7, symbol2 | 頂端資料源區塊：2 選項 Yahoo（預設）/ 官方（依市場別自動路由 TWSE/TPEx）；官方源固定顯示逐月等待提示、市場別未知時顯示警告且不清空既有資料（request 限流為程式內部節流，不顯示提示） |
+| [sidebar3](task-pool/sidebar3.md) | 完成 | Medium | drawing6 | 可折疊「畫線區塊」：列出所有畫線、點選高亮對應線、刪除單條（僅檢視+刪除，觸控/桌面通用）；折疊清單或側邊欄時自動取消選取 |
 
 ### share Module
 
@@ -118,10 +117,11 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 - `technical-debt.md` — 已知技術債清單
 - `../docs/deployment.md` — 實際部署設定（GitHub Pages workflow、本機開發指令）
 - `../docs/proxy.md` — 已實作 CORS proxy（`worker/`，Deno Deploy，`/proxy/{tpex|yahoo}?path=...`）
-- `../docs/data-layer.md` — 已實作資料層行為（provider registry、TwseProvider、逐月節流查詢、localStorage 快取）
+- `../docs/data-layer.md` — 已實作資料層行為（provider registry、三個 provider、資料源路由與 App 查詢流程、逐月節流查詢、localStorage 快取）
+- `../docs/sidebar.md` — 已實作設定側邊欄（覆蓋式版面與疊層順序、可折疊骨架、資料源區塊、畫線清單與選取規則）
 - `../docs/indicators.md` — 已實作指標架構（IndicatorDefinition/registry、MA/布林通道/MACD 指標、指標清單 UI）
 - `../docs/stock-list.md` — 已實作股票清單自動更新（來源／解析規則、有效性 gate 與重試、每週 workflow 與 Pages 串接）
-- `../docs/drawing.md` — 已實作畫線模組（TrendLinePrimitive、正式 DrawingController：模式切換、按下拖曳、多線陣列管理、切股清除、選取刪除單條線）
+- `../docs/drawing.md` — 已實作畫線模組（TrendLinePrimitive、正式 DrawingController：模式切換、按下拖曳、多線陣列管理、切股清除、清單 API 與 `ChartHandle`）
 - `../docs/symbol-search.md` — 已實作前端代號搜尋（清單載入與快取、代號／名稱搜尋排序、送出前代號解析、ChartToolbar combobox）
 
 ---

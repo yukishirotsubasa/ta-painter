@@ -1,6 +1,6 @@
 # 資料層（`web/src/lib/data/`）
 
-> 本文件記錄**已實作**的資料層行為（TWSE、TPEx、Yahoo 三個 provider 皆已實作）。規劃中的整體設計見 `project-planning/design.md`。
+> 本文件記錄**已實作**的資料層行為（TWSE、TPEx、Yahoo 三個 provider 皆已實作，並經 `dataSource.ts` 接進 UI，見「資料源路由」一節）。規劃中的整體設計見 `project-planning/design.md`。
 
 ## 統一介面（`types.ts`）
 
@@ -67,7 +67,7 @@ TPEx／Yahoo 直連會被 CORS 擋，需經 CORS proxy 轉發（見 [proxy.md](p
 
 ## 逐月節流查詢（`throttle.ts` — `fetchDailyRange`）
 
-`fetchDailyRange(provider, stockNo, range, onProgress?, signal?)` 是實際查詢長區間資料的入口（`App.tsx` 呼叫這個，而不是直接呼叫 provider）：
+`fetchDailyRange(provider, stockNo, range, onProgress?, signal?)` 是**官方源**查詢長區間資料的入口（由 `dataSource.ts` 的 `fetchBars()` 呼叫，見下節；Yahoo 為單次請求不走這裡）：
 
 1. 依 `range` 展開成 `'YYYY-MM'` 月份清單（`listMonths`），起訖月皆含、無缺漏無重複。
 2. 逐月循序處理，每個月：
@@ -77,6 +77,41 @@ TPEx／Yahoo 直連會被 CORS 擋，需經 CORS proxy 轉發（見 [proxy.md](p
    - 每次月與月之間若**真的發送了網路請求**，才等待 300–500ms 隨機節流（若該月是快取命中，不等待，因此重查已快取區間會明顯變快）。
    - 每完成一個月呼叫一次 `onProgress({ loaded, total, message })`。
 3. 支援 `AbortSignal`：呼叫前或等待節流期間偵測到 `signal.aborted` 會立即中止並 reject `AbortError`，不會再發送後續請求。
+
+## 資料源路由（`dataSource.ts`，data7）
+
+`App.tsx` 不直接持有 provider，改透過 `dataSource.ts` 這層決定「這次查詢要走哪個 provider、用哪種抓取策略」：
+
+```ts
+type DataSource = 'yahoo' | 'official';
+
+const DATA_SOURCES: DataSource[] = ['yahoo', 'official'];
+const DEFAULT_DATA_SOURCE: DataSource = 'yahoo';
+const DATA_SOURCE_LABEL: Record<DataSource, string>; // 'Yahoo（快）' / '官方（TWSE／TPEx）'
+
+function resolveProvider(source: DataSource, market: Market | null): StockDataProvider | null;
+function estimateRequestCount(source: DataSource, range: DateRange): number;
+function fetchBars(
+  source: DataSource,
+  stockNo: string,
+  market: Market | null,
+  range: DateRange,
+  onProgress?: FetchProgressCallback,
+  signal?: AbortSignal,
+): Promise<OhlcvBar[]>;
+```
+
+- `resolveProvider()`：`yahoo` 恆為 `YahooProvider`（上市／上櫃通用、與市場別無關）；`official` 依市場別路由 `TWSE → TwseProvider`、`TPEX → TpexProvider`；**官方源但市場別為 `null`（代號不在股票清單內）時回傳 `null`**。模組頂端 `import` 三個 provider 檔案完成 side-effect 註冊，再用 id 從 `providerRegistry` 取實例。
+- `fetchBars()`：**Yahoo 走單次 `provider.fetchDaily()`**（一次取回整段區間，不經逐月迴圈，因此也不經 localStorage 月快取與月間節流）；**官方源走 `fetchDailyRange()`**（逐月 + 快取 + 300–500ms 節流）。無法解析 provider 時 reject `無法判斷 {stockNo} 的市場別（不在股票清單內），請改用 Yahoo 資料源`。
+- `estimateRequestCount()`：Yahoo 恆為 1、官方源等於區間月數（快取命中不會減少估計值），供 `App.tsx` 設定進度條的 `total`。
+
+## `App.tsx` 的查詢流程
+
+- 預設資料源為 **Yahoo**（`DEFAULT_DATA_SOURCE`），可由側邊欄資料源區塊切換（見 [sidebar.md](sidebar.md)）。查詢區間固定為近 `QUERY_MONTHS = 6` 個月。
+- **路由用的市場別只在官方源時採用**（`routingMarket = dataSource === 'official' ? symbol.market : null`）：Yahoo 模式下股票清單補上市場別不會觸發重新查詢。
+- **官方源但市場別未知時不發查詢、也不清空既有資料**：`bars` 維持前一次結果，header 顯示 `notice`（`代號不在股票清單內，官方源無法判斷市場別；圖表仍顯示前一次查詢結果，請改用 Yahoo 或改查其他代號`），側邊欄另有路由層級的警告。這與查詢失敗的 `error`（會清空 `bars`）是不同狀態。
+- **代號送出 debounce（300ms）**：Enter 確認、下拉建議選取、查詢按鈕三條路徑都會走同一個查詢 effect，`fetchBars()` 包在 `setTimeout(…, QUERY_DEBOUNCE_MS)` 內，cleanup 同時 `clearTimeout()` 與 `AbortController.abort()`，因此**快速連續切換代號時只有最後一次真的發出請求**。進度條在 timer 之外先設好，載入回饋不受延遲影響。
+- **同代號重送為 no-op**：`lib/stock/selection.ts` 的 `applySubmittedCode(prev, code)` 在代號未變時回傳原物件參考，避免「重按查詢 → `market` 被重設為 `null` → 官方源守門 → 清單解析完再查一次」的多餘往返。
 
 ## localStorage 快取（`cache.ts`）
 
@@ -89,7 +124,7 @@ TPEx／Yahoo 直連會被 CORS 擋，需經 CORS proxy 轉發（見 [proxy.md](p
 
 ## 已知限制 / 尚未實作
 
-- `TpexProvider`、`YahooProvider` 已實作並註冊，但**尚未接進 UI**：目前 `App.tsx` 仍固定 `import` 並使用 `TwseProvider`，因此上櫃股與 Yahoo 來源目前只能由 console 手動呼叫、無法從畫面查詢。將來源接進查詢流程屬於長區間自動選源／切源提示 UI（[data7](../project-planning/task-pool/data7.md)）的範疇，尚未實作。
-  - symbol2 已讓 `App.tsx` 依股票清單記下目前代號的市場別（`SymbolSelection.market`，見 [symbol-search.md](./symbol-search.md)），但還沒有任何程式讀它；依市場別自動路由 TWSE／TPEx 屬 [sidebar2](../project-planning/task-pool/sidebar2.md)。實務影響：從搜尋建議選到上櫃股會走 `TwseProvider` 而查詢失敗。
+- **Yahoo 路徑不走 localStorage 月快取**：`fetchBars()` 對 Yahoo 直接單次請求，重查同一區間仍會實打上游一次。這是明確決策（Yahoo 單次查詢成本低），請求頻率由代號送出的 300ms debounce 控制，不另外加快取回填。
+- **查詢區間固定 6 個月**：`App.tsx` 的 `QUERY_MONTHS` 寫死，沒有區間選擇 UI。
 - Yahoo 的成交量不含盤後定價／鉅額交易，數值略低於 TWSE／TPEx 官方（OHLC 一致）；三來源的量能單位雖已統一為股數，但同一檔股票跨來源查詢時量能會有小幅落差，見 [technical-debt.md](../project-planning/technical-debt.md)。
 - TPEx／Yahoo 的反爬蟲／IP 封鎖規則不受我方控制，proxy 可能再次失效且目前無監控，見 [technical-debt.md](../project-planning/technical-debt.md)。

@@ -34,7 +34,8 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 20;
+  /* 需高於覆蓋式側邊欄，下拉建議才不會被蓋住；疊層順序見 index.css。 */
+  z-index: var(--z-dropdown);
   margin: 0;
   padding: 4px 0;
   list-style: none;

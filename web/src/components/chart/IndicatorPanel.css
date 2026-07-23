@@ -1,9 +1,9 @@
+/* 位於側邊欄「指標區塊」內（sidebar1），寬度受側邊欄限制，因此清單改為縱向堆疊。 */
 .indicator-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
 }
 
 .indicator-panel-add {
@@ -25,7 +25,7 @@
 
 .indicator-panel-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
   list-style: none;
   margin: 0;
@@ -34,6 +34,7 @@
 
 .indicator-panel-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-size: 13px;

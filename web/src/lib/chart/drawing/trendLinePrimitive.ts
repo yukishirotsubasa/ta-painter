@@ -33,8 +33,8 @@ interface PixelPoint {
 
 export const DEFAULT_TREND_LINE_WIDTH = 2;
 
-/** 被選取時在該線自身 `width` 上加粗的量，讓不同 `width` 的線選取後都有一致的視覺回饋。 */
-const SELECTED_WIDTH_DELTA = 1;
+/** 被選取時線寬的倍率（人工測試回饋：+1px 太不明顯，改為加粗一倍）。 */
+const SELECTED_WIDTH_MULTIPLIER = 2;
 const SELECTED_HANDLE_RADIUS = 4;
 
 class TrendLinePaneRenderer implements IPrimitivePaneRenderer {
@@ -59,7 +59,7 @@ class TrendLinePaneRenderer implements IPrimitivePaneRenderer {
       ctx.save();
       ctx.scale(scope.horizontalPixelRatio, scope.verticalPixelRatio);
       ctx.strokeStyle = style.color;
-      ctx.lineWidth = selected ? style.width + SELECTED_WIDTH_DELTA : style.width;
+      ctx.lineWidth = selected ? style.width * SELECTED_WIDTH_MULTIPLIER : style.width;
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);

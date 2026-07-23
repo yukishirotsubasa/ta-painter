@@ -46,8 +46,9 @@
   3. 另一個評估過但改動範圍明顯較大的方向：另外做一個「已畫線條清單」UI 面板，列出每條線並附刪除按鈕，完全不需要在畫布上精準點選；但需要把 `DrawingController` 內部的 `lines` 陣列曝光成可被 React 觀察（目前是純 imperative 黑盒、沒有任何回調），超出當初 drawing4 的 scope。
 - **對應任務**：[drawing6](task-pool/drawing6.md) + [sidebar3](task-pool/sidebar3.md)。方向調整為**移除畫布點擊選取**、改由側邊欄「已畫線清單」選取與刪除，故不再需要調整命中容差。
 
-## 觸控裝置無法刪除選取中的單條線（缺少刪除 UI）
+## ~~觸控裝置無法刪除選取中的單條線（缺少刪除 UI）~~（已解：sidebar3 側邊欄畫線清單，2026-07-23）
 
+- **解法**：drawing6 曝光 `getLines()`/`onLinesChange()`/`deleteLine(id)`/`highlightLine(id)`，sidebar3 以 `components/sidebar/DrawingListPanel.tsx` 接成側邊欄「畫線區塊」：列出每條線、點項高亮、每項附刪除鈕（觸控目標 8px padding），桌面／觸控通用且不需鍵盤。使用者已在真實瀏覽器實測確認可刪除單條線，此則關閉。以下為原始紀錄。
 - **來源任務**：[drawing5](task-pool/drawing5.md)（行動觸控人工驗證，2026-07-22）
 - **狀況**：`DrawingController.deleteSelectedLine()`（`web/src/lib/chart/drawing/drawingController.ts`）只透過 `window` 的 `keydown` 監聽器觸發（`Delete`/`Backspace`，見 [`docs/drawing.md`](../docs/drawing.md)）。觸控裝置沒有實體鍵盤，選取到線條後（觸控端命中判定比桌面容易）沒有任何按鈕或手勢可以刪除該線；`DrawingController` 也沒有對外曝光選取狀態變化的回呼或 public 的 `deleteSelected()` 方法，React 層目前無從得知「目前有沒有線被選取」。
 - **影響**：觸控使用者可以畫線、選取線，但無法單獨刪除某一條，只能靠切換股票代號（`clearAll()`）整批清除。使用者實測後確認此限制暫不處理。
@@ -123,7 +124,8 @@
 - **來源任務**：[symbol2](task-pool/symbol2.md)（2026-07-23）
 - **狀況**：vitest 目前跑在 node 環境（未裝 jsdom／happy-dom 與 testing-library），所有測試都只涵蓋純函式。symbol2 把可測邏輯盡量抽成純函式（`searchStocks`／`findByCode`／`findByNamePrefix`／`resolveSubmitCode`，23 例），但 `ChartToolbar` 內的互動——↑/↓ 環繞選取、Enter 送出、`isComposing` 擋隱式送出、`onMouseDown` 早於 `blur`、`stockNo` 外部變動的同步 `useEffect`、提示訊息的清除時機——沒有任何自動化測試，本次是逐項在 dev server 上以 DOM 查詢驗證的。
 - **影響**：這些互動細節（尤其 `isComposing` 與 `mousedown`/`blur` 的先後）正是最容易在重構時無聲壞掉的部分，回歸只能靠人工重測。另外沙盒環境的 Browser pane 無法截圖（`Screenshot timed out: the Browser pane is not displayed`），驗證只能靠 `javascript_tool` 讀 DOM，成本比一般手測更高。CDP 合成的 Enter 鍵也不會觸發表單的隱式送出，該路徑是改以 `form.requestSubmit()` 驗證、真實 Enter 由使用者複測確認。
-- **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框。
+- **現況（2026-07-23 更新，sidebar1/2/3）**：缺口再度擴大。側邊欄收合、區塊折疊、資料源切換、清單選取／刪除、折疊自動取消選取等互動同樣沒有元件測試，只有抽出的純函式（`lineSelection`、`lineLabel`、`applySubmittedCode`）有涵蓋。更嚴重的是**畫線相關端到端行為在沙盒內完全無法驗證**：Browser pane 為 hidden，CSS transition 與 rAF 凍結、canvas 不重繪、lightweight-charts 的 `subscribeCrosshairMove` 不觸發（實測對 container 與所有子元素派送合成 `mousedown`/`mousemove`/`mouseup` 都畫不出線），連第二個 pane 的 DOM row 與分隔線都要等實際 paint 才生成。因此「拖曳畫線 → 清單列出 → 點選高亮 → 刪除消失」只能靠使用者人工測。
+- **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
 - **對應任務**：暫無（defer，下次動到元件互動邏輯時一併補）。
 
 ## 股票清單型別在 `scripts/` 與 `src/` 各自宣告一份
@@ -134,7 +136,20 @@
 - **建議**：真要共用的話，把型別抽到兩個 tsconfig 都納入的第三處（例如 `web/shared/stockList.types.ts`，純型別檔、無執行期程式碼），兩邊各自 `import type`。欄位穩定的現況下成本效益不高，可等實際要改欄位時再做。
 - **對應任務**：暫無（defer）。
 
+## 覆蓋式側邊欄的疊層依賴 lightweight-charts 內部寫死的 z-index
+
+- **來源任務**：[sidebar1](task-pool/sidebar1.md)（人工驗證後改為覆蓋式版面，2026-07-23）
+- **狀況**：側邊欄改成絕對定位覆蓋在圖表之上（不擠壓版面、圖表不 resize），但圖表在側邊欄底下仍是滿版的，其內部元素會延伸到側邊欄下方。lightweight-charts 對這些元素寫死了 z-index：canvas 是 1/2、pane 分隔線拖曳把手是 49/50（`_addResizableHandle`，拖曳時另有一層 `position: fixed` 的 49 全螢幕背景）。我方必須把 `.sidebar` 設到 60、代號搜尋下拉設到 70 才不會被蓋住。這些數值已集中成 `web/src/index.css` 的 `--z-sidebar`/`--z-dropdown`（另有 `--z-chart-canvas`/`--z-chart-pane-handle` 兩個**僅供對照、不套用**的變數把函式庫的值寫進同一張順序表），但**順序關係本身仍依賴函式庫的實作細節**。
+- **影響**：實際踩過兩次坑——側邊欄用 `z-index: 1` 時整片被 canvas 蓋住、所有點擊失效；改成 10 後仍留一條「隱形帶」，點在 pane 分隔線的 y 座標上會誤觸量能 pane 高度拖曳（症狀是點側邊欄的清單項卻拖動了圖表）。這類 bug 的表徵與成因距離很遠，排查成本高；若日後升級 lightweight-charts 且它調整了內部 z-index（或新增更高層的元素，例如 tooltip/浮層），同樣的問題會再次出現，且沒有任何自動化測試會攔到。
+- **建議**：升級 lightweight-charts 時把「側邊欄各列（含 pane 分隔線所在 y）是否仍命中側邊欄元素」列為必測項（可用 `document.elementFromPoint` 快速檢查）。若不再需要調整量能 pane 高度，最徹底的解法是 `layout: { panes: { enableResize: false } }` 直接關掉 pane 拖曳，49/50 這層就不存在了（本次已評估，使用者決定保留拖曳功能）。
+- **對應任務**：暫無（defer，升級函式庫時複查）。
+
 ## ~~三來源成交量口徑不一致（Yahoo 略低）~~（決策：不處理，2026-07-22）
 
 - **來源任務**：[data6](task-pool/data6.md)
 - **決策**：三來源量能口徑不同（Yahoo 不含盤後定價／鉅額交易，實測 2330 於 2024-09-02 TWSE 19,272,593 股 vs Yahoo 18,646,835 股，OHLC 一致）。經確認**依來源原樣顯示，不做正規化、不加 tooltip 註明**；[data7](task-pool/data7.md) 亦不做跨源標示。此則關閉、不再追蹤。
+
+## ~~Yahoo 資料源不走 localStorage 月快取~~（決策：不處理，2026-07-23）
+
+- **來源任務**：[data7](task-pool/data7.md)
+- **決策**：`dataSource.fetchBars()` 對 Yahoo 走單次 `provider.fetchDaily()`（一次取回整段區間），因此不經 `fetchDailyRange()` 的逐月快取與月間節流，重查同一區間仍會實打上游一次。經確認**維持現狀、不做快取回填也不另行處理**：Yahoo 單次查詢成本低，且官方源的近月資料本來就不快取（當月一律視為過期），加快取並不能解決「短時間大量請求」的問題。請求頻率改以**代號送出的 300ms debounce**（`App.tsx` 的 `QUERY_DEBOUNCE_MS` + `lib/stock/selection.ts` 的 `applySubmittedCode`）控制：Enter／下拉選取／查詢鈕連打時只有最後一次真的發出，同代號重送為 no-op。此則關閉、不再追蹤。

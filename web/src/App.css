@@ -25,6 +25,21 @@ body,
   margin: 0;
 }
 
+/* 圖表始終佔滿整個區域，側邊欄以絕對定位覆蓋在左側（見 Sidebar.css）。 */
+.app-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .progress {
   position: relative;
   flex: 1;
@@ -53,4 +68,14 @@ body,
 .app-error {
   padding: 16px;
   color: #f87171;
+}
+
+/* 「這次沒查、沿用前一次結果」的說明；查詢失敗請用 .app-error。 */
+.app-notice {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 140%;
+  color: var(--accent);
+  margin: 0;
 }

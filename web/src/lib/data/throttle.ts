@@ -49,6 +49,11 @@ function listMonths(range: DateRange): string[] {
   return months;
 }
 
+/** 查詢區間涵蓋的月數（即逐月抓取時的請求次數上限），起訖月皆含。 */
+export function countMonths(range: DateRange): number {
+  return listMonths(range).length;
+}
+
 /** 該月整月的 DateRange（不裁切），用於向 provider 查詢與寫入快取，確保快取內容為完整月份。 */
 function fullMonthRange(monthLabel: string): DateRange {
   const [year, month] = monthLabel.split('-').map(Number);
