@@ -75,14 +75,17 @@
   方案 1 與現有 `HIT_TEST_TOLERANCE_PX` 命中容差優化（見下一則技術債）可以一併處理，因為兩者都需要先把 `DrawingController` 的內部選取狀態曝光給 React 層觀察。
 - **對應任務**：[drawing6](task-pool/drawing6.md) + [sidebar3](task-pool/sidebar3.md)（側邊欄清單刪除，觸控/桌面通用）。
 
-## 沒有本機 pre-commit/CI type-check，`main` 曾出現能過 test 但過不了 `tsc -b` 的 commit
+## ~~沒有本機 pre-commit/CI type-check，`main` 曾出現能過 test 但過不了 `tsc -b` 的 commit~~（已解：ci1 加 `.githooks/pre-push`，2026-07-24）
 
+- **解法（ci1，2026-07-24）**：新增版本控管的 `.githooks/pre-push`（+ `.githooks/README.md`），以 `git config core.hooksPath .githooks` 啟用，零 npm 依賴（不裝 husky、repo root 不新增 package.json）。hook 由 pre-push 的 stdin 算出本次 push 的差異範圍，只有動到 `web/` 才跑新增的 `npm run typecheck`（`tsc -b`），失敗即中止 push；`--no-verify` 可略過。實測三情境皆符合預期（只動 `project-planning/` → 短路放行；動 `web/` 且型別正常 → 通過；注入 `const x: number = "boom"` → 印 TS2322 並 exit 1）。細節見 [`docs/deployment.md`](../docs/deployment.md)。
+- **方案調整**：原建議的兩條路（husky pre-commit／非-`main` 分支 CI）都未採用——實際開發流程只在 `main` 上作業、不開分支，分支/PR 的 CI 觸發不到；而 `main` push 的 CI 就是既有的 `deploy-pages.yml`（本來就跑 `npm run build`），再加一個 workflow 只是重複、且一樣要等 push 後才知道。pre-push 是唯一能在部署觸發前擋下的位置。
+- **殘留限制**：hook 檢查 working tree 而非 commit 快照；且需每個 clone 手動 `git config core.hooksPath` 一次（零依賴方案的必然代價）。
 - **來源任務**：[drawing4](task-pool/drawing4.md)（修正於本次 session，2026-07-22）
 - **狀況**：drawing4 完成時（commit `9016432`）`TrendLinePrimitive.hitTest()` 回傳 `boolean`，但專案實裝的 `lightweight-charts@5.2.0` 型別要求 `ISeriesPrimitiveBase.hitTest` 回傳 `PrimitiveHoveredItem | null`。`npm test`（vitest）當時全數通過（測試只驗證行為，不跑型別檢查），但這個型別錯誤直到 push 後才被 GitHub Actions 的 `npm run build`（`tsc -b && vite build`，見 `.github/workflows/deploy-pages.yml`）攔下，導致部署失敗。本地沒有任何 pre-commit hook 或本機 CI 腳本會在 commit 前跑 `tsc -b`。已於本次 session 修正（`hitTest` 改回傳 `PrimitiveHoveredItem | null`，命中回傳 `{ cursorStyle: 'pointer', externalId: 'trend-line', zOrder: 'normal' }`，未命中回傳 `null`；`DrawingController.hitTestLines()` 改用 `!== null` 判斷），詳見 [`docs/drawing.md`](../docs/drawing.md)。
 - **影響**：目前僅發生一次（型別錯誤，非邏輯錯誤，實際互動行為不受影響），但這個落差模式（本機只跑 `npm test` 就 commit，未跑 `npm run build`）未來仍可能重演，尤其是升級第三方套件版本（如 lightweight-charts）後型別介面變動時最容易中招，且要等 push 後才會在 CI 發現，拖慢回饋速度。
 - **建議**：養成 commit/push 前跑一次 `npm run build`（或至少 `tsc -b`）的習慣；若要根治，可考慮加 Husky pre-commit hook 跑 `tsc -b`，或在 `deploy-pages.yml` 之外另建一個「PR/push 到非 main 分支」也會跑 `npm run build` 的 CI workflow，讓型別錯誤在合併前就被攔下而非等到部署才發現。
 - **決策（2026-07-23）**：**實作，最優先**。已實際造成一次部署失敗，成本只有一個 workflow yml 或 husky hook，且後續其他任務都會改到型別敏感的程式碼，先立好 gate 收益最大。任務優先級由 Low 調為 High。
-- **對應任務**：[ci1](task-pool/ci1.md)。
+- **對應任務**：[ci1](task-pool/ci1.md)（已完成，2026-07-24）。
 
 ## `worker/` 的 Deno Deploy 部署沒有 CI 測試 gate
 

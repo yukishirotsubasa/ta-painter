@@ -25,12 +25,32 @@
 cd web
 npm install
 npm run dev      # http://localhost:5173/ta-painter/
-npm run build    # 產出 web/dist
-npm run test     # vitest run
-npm run lint     # oxlint
+npm run build      # 產出 web/dist
+npm run typecheck  # tsc -b（不產出 bundle，pre-push hook 用的就是這個）
+npm run test       # vitest run
+npm run lint       # oxlint
 ```
 
 `npm run update-stock-list`（手動重跑股票清單抓取）另需 Node `>=22.6`，見 [stock-list.md](./stock-list.md)。
+
+## 型別檢查 gate（pre-push hook）
+
+repo 內附版本控管的 git hooks 於 `.githooks/`，git 預設不會使用，**每個 clone 需執行一次**：
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`.githooks/pre-push` 的行為：
+
+- 讀 pre-push 由 stdin 傳入的 `<local ref> <local sha> <remote ref> <remote sha>`，用 `git diff --name-only <remote sha> <local sha> -- web/` 判斷本次 push 的 commit 有沒有動到 `web/`；沒動到就直接放行（不花時間跑編譯）
+- 遠端尚未存在該分支（`remote sha` 為全 0）時無從算差異範圍，一律檢查；刪除遠端分支（`local sha` 為全 0）則跳過
+- 需要檢查時執行 `npm run typecheck`（即 `tsc -b`，工作目錄 `web/`），失敗即以非零狀態中止 push；`web/node_modules` 不存在時直接報錯提示先跑 `npm ci`
+- 緊急略過：`git push --no-verify`
+
+零 npm 依賴（不使用 husky，repo root 也沒有 package.json）。檢查對象是 **working tree 目前的檔案內容**，不是即將 push 的 commit 快照——有未提交的髒改動時，結果會反映髒改動。
+
+存在理由：`npm test`（vitest）不跑型別檢查，曾發生「測試全過但 `tsc -b` 不過」的 commit 進到 `main`，直到 Pages 部署才失敗（見 [technical-debt.md](../project-planning/technical-debt.md)）。此 hook 把該防線移到 push 前。
 
 ## Node 版本需求
 
