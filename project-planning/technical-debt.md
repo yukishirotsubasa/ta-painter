@@ -205,3 +205,19 @@
 - **影響**：需要「開分享連結 → 第一次查詢失敗 → 不重新整理直接改查別支」這串操作才會觸發，日常不易遇到；症狀是線條出現在不相干的股票上（座標仍是原本的 time/price，位置多半明顯不合理）。另一個較小的副作用：pending 未清空期間 hash 同步被擋住，網址不會跟著使用者的操作更新。
 - **建議**：把 pending 改成 `{ stockNo, lines }`，還原 effect 先比對 `stockNo` 相符才補線、不符就直接丟棄 pending（並解除 hash 同步的封鎖）。改動集中在 `App.tsx` 的兩個 effect，成本很低，等有元件測試環境時可一併補上回歸測試。
 - **對應任務**：暫無（defer，觸發條件狹窄；下次動到 `App.tsx` 還原流程時一併處理）。
+
+## 觸控畫線手勢只在 fake `TouchEvent` 下驗證，真機（iOS Safari／Android Chrome）未測
+
+- **來源任務**：[responsive3](task-pool/responsive3.md)（2026-07-23）
+- **狀況**：沙盒的 Browser pane 不合成畫面（`document.visibilityState === 'hidden'`），既截不了圖也產不出真實的觸控事件序列（`computer` 的 drag 動作在 canvas 上一律 timeout，drawing1 起就是如此）。responsive3 的多指防呆因此改用 `drawingController.test.ts` 的 fake `TouchEvent`（只有 `touches.length` + 第一指座標 + `preventDefault`）覆蓋四條路徑，CSS 面（`touch-action: none`、44px 觸控目標）則以 `javascript_tool` 量測 computed style 與 `getBoundingClientRect()`。responsive3 的驗收條件 1–3（真機單指平移／雙指縮放、畫線模式單指拖曳不誤觸平移、模式提示是否夠清楚）全部尚未執行。
+- **影響**：fake event 驗的是**我們的分支邏輯**，驗不到平台行為——驗不到的部分包括：iOS Safari 對 `touch-action: none` 與 lightweight-charts 內建 tracking mode 的實際互動、第二指落下時真實裝置送出的事件順序（`touchstart` 與 `touchmove` 的先後、是否夾帶 `touchcancel`）、以及 44px 在實際指腹下是否真的夠用。若真機行為與假設不符，症狀會是「畫線畫到一半突然變成平移」或「線莫名歪掉」這類難以從程式碼看出的問題。
+- **建議**：真機各測一次，重點三項：(1) 非畫線模式單指平移＋雙指縮放仍正常；(2) 畫線模式下故意在拖曳中補第二指，確認**不會**留下一條歪線；(3) 連續畫 3 條線確認 drawing5 修掉的座標偏移沒有回歸。若第二指的事件順序與假設不同，`isMultiTouch()` 的攔截點可能要往 `touchcancel` 補一份。
+- **對應任務**：暫無（需實體裝置，defer 至有機會實測時；與 [share5 的 Web Share 真機驗證](#web-share-只在-stub-下驗證真機ios-safariandroid-chrome未測)可同一次測完）。
+
+## 44px 觸控目標散在三個 CSS 檔，靠後代選擇器涵蓋，新增行動版 UI 時容易漏掉
+
+- **來源任務**：[responsive3](task-pool/responsive3.md)（2026-07-23）
+- **狀況**：行動版的 ≥44px 觸控目標由三條後代選擇器提供——`.app-header-mobile`（`AppLayout.css`）、`.overlay-panel-body`（`OverlayPanel.css`）、`.app-mobile .indicator-legend`（`IndicatorLegend.css`）。選用後代選擇器是刻意的（沿用既有的斷點 class，不必再抄一份 1024px），但代價是「哪些容器有 44px 保護」變成一份沒有寫在任何一處的隱性清單，且每條規則都得各自重複 `box-sizing: border-box`、`input:not([type='radio'])` 排除、`button` 的 `min-width` 這幾個細節。
+- **影響**：目前三個容器已涵蓋行動版所有可點元素（實測 390×844 逐一量測通過）。但日後若新增一個不在這三個容器內的行動版 UI（例如放在圖表上的浮動按鈕、或新的覆蓋層），它不會自動獲得 44px，而且**不會有任何錯誤或警告**，只能靠人工量測發現。
+- **建議**：抽一個共用的 `.touch-target` utility class（或 CSS `@mixin` 等價物：在 `index.css` 定義一組宣告，各處 `@extend`／複製一行 class 名）放進 `index.css`，讓「這是觸控目標」變成明確標記而非容器繼承。現有三條規則可保留為 fallback。等到行動版真的多出第四個容器時再做，現在抽會是為單一使用情境過度設計。
+- **對應任務**：暫無（defer）。

@@ -36,10 +36,14 @@
   cursor: pointer;
 }
 
+/*
+ * 開啟狀態做成實心（responsive3）：原本的淡底與 fieldset 自己的 .drawing-toolbar-active 底色太接近，
+ * 一眼看不出模式開著；模式開著時圖表的 pan/zoom 會失效，狀態必須一眼可辨。
+ */
 .drawing-toggle[aria-pressed='true'] {
-  color: var(--accent);
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
   font-weight: 600;
 }
 

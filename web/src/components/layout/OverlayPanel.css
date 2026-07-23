@@ -35,9 +35,11 @@
   color: var(--text);
   background: transparent;
   border: none;
-  /* 觸控目標放大到 40px 見方，右側留白靠負 margin 抵銷。 */
-  padding: 10px;
-  margin: -10px -6px -10px 0;
+  /* 觸控目標放大到 44px 見方（responsive3），右側留白靠負 margin 抵銷。 */
+  padding: 12px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -12px -8px -12px 0;
   cursor: pointer;
 }
 
@@ -49,4 +51,29 @@
   padding: 4px 12px;
   /* iPhone 底部 home indicator 區域不要蓋住最後一列控制項。 */
   padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+/*
+ * 觸控目標下限（responsive3）：面板內的控制項一律 ≥44px 高。
+ * `OverlayPanel` 只在行動版渲染，因此不需要 media query，桌面側邊欄也不會受影響
+ * （同一份 `settings` 節點在桌面版是包在 `.sidebar` 裡）。
+ * 排除 radio：拉高替換元素會把圓鈕本身撐大，改讓外層 label 提供可點面積。
+ */
+.overlay-panel-body button,
+.overlay-panel-body select,
+.overlay-panel-body input:not([type='radio']),
+.overlay-panel-body .data-source-option {
+  min-height: 44px;
+  /* input 預設 content-box，不改的話 min-height 會再疊上 padding 與框線。 */
+  box-sizing: border-box;
+}
+
+/* 只有圖示／短字的按鈕（移除、✕）橫向也要夠寬。 */
+.overlay-panel-body button {
+  min-width: 44px;
+}
+
+/* 色塊維持方形目標，與上面的 min-height 湊成 44×44。 */
+.overlay-panel-body input[type='color'] {
+  width: 44px;
 }

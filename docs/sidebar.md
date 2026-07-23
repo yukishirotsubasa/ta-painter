@@ -132,6 +132,6 @@
 
 ## 已知限制 / 尚未實作
 
-- **行動版不使用側邊欄**：`< 1024px` 時設定改由 `OverlayPanel` 覆蓋整個圖表區承載（區塊內容相同），見 [`responsive.md`](responsive.md)。觸控手勢調整（`responsive3`）尚未實作。
+- **行動版不使用側邊欄**：`< 1024px` 時設定改由 `OverlayPanel` 覆蓋整個圖表區承載（區塊內容相同），見 [`responsive.md`](responsive.md)。`OverlayPanel` 內的控制項另由 `responsive3` 統一放大到 44px 觸控目標（桌面側邊欄不受影響）。
 - **側邊欄互動沒有元件測試**：折疊、選取、刪除等 React 互動只有抽出的純函式（`lineSelection`、`lineLabel`）有 unit test，元件層仍靠人工驗證，見 [`technical-debt.md`](../project-planning/technical-debt.md)。
 - **疊層依賴函式庫內部值**：`--z-sidebar` 必須高於 lightweight-charts 寫死的 49/50，升級函式庫時需複查，見 [`technical-debt.md`](../project-planning/technical-debt.md)。

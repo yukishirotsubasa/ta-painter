@@ -76,6 +76,26 @@
   padding: 10px;
 }
 
+/*
+ * 行動版觸控目標下限（responsive3）：圖例是桌面／行動共用的同一份節點，
+ * 因此靠 `.app-mobile`（由 useResponsive 的斷點決定）限定，只在行動版放大點擊面積。
+ */
+.app-mobile .indicator-legend button,
+.app-mobile .indicator-legend select,
+.app-mobile .indicator-legend input:not([type='radio']) {
+  min-height: 44px;
+  /* input 預設 content-box，不改的話 min-height 會再疊上 padding 與框線。 */
+  box-sizing: border-box;
+}
+
+.app-mobile .indicator-legend button {
+  min-width: 44px;
+}
+
+.app-mobile .indicator-legend input[type='color'] {
+  width: 44px;
+}
+
 .indicator-legend-panel-remove {
   font: inherit;
   font-size: 13px;

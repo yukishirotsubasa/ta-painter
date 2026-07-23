@@ -1,6 +1,6 @@
 # RWD 佈局（`web/src/hooks/useResponsive.ts`、`components/layout/`）
 
-> 本文件記錄**已實作**的響應式佈局：斷點 hook 與桌面／行動佈局骨架（responsive1）+ 行動版設定覆蓋面板、指標圖例與精簡工具列（responsive2）。觸控手勢調整（responsive3）尚未實作。整體規劃見 `project-planning/design.md`。
+> 本文件記錄**已實作**的響應式佈局：斷點 hook 與桌面／行動佈局骨架（responsive1）+ 行動版設定覆蓋面板、指標圖例與精簡工具列（responsive2）+ 觸控手勢與觸控目標尺寸（responsive3）。整體規劃見 `project-planning/design.md`。
 
 ## 斷點（`hooks/useResponsive.ts`）
 
@@ -90,7 +90,7 @@ interface AppLayoutProps {
 
 ## `OverlayPanel`（`components/layout/OverlayPanel.tsx`）
 
-行動版設定面板：佔滿 `.app` grid 的 row 2（`grid-row: 2; grid-column: 1`），標題列（`<h2>` + `✕` 關閉鈕，觸控目標 40px）＋可捲動的 body（`overscroll-behavior: contain`，底部 `padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px))` 避開 iPhone home indicator）。開關由呼叫端決定——**不渲染即關閉**，沒有 `open` prop。
+行動版設定面板：佔滿 `.app` grid 的 row 2（`grid-row: 2; grid-column: 1`），標題列（`<h2>` + `✕` 關閉鈕，觸控目標 44px）＋可捲動的 body（`overscroll-behavior: contain`，底部 `padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px))` 避開 iPhone home indicator）。開關由呼叫端決定——**不渲染即關閉**，沒有 `open` prop。
 
 > **實測回饋後的修正**：原本做成貼底的 bottom sheet（`max-height: 60%`），使用者實測回報面板太矮、選項擠在一起不好操作，改為整區覆蓋。同一台 390×844 裝置上可操作高度由 334px → 697px。
 
@@ -132,11 +132,37 @@ interface AppLayoutProps {
 |---|---|---|
 | `<h1>`（App 直接渲染） | 「TA Painter」 | 加 `.sr-only` |
 | `ChartToolbar` | 「股票代號」label | label 加 `.sr-only`（輸入框仍保有 accessible name） |
-| `DrawingToolbar` | 「模式：開/關」＋「線色」文字 | 「畫線」（`aria-label="畫線模式"`）＋「線色」文字改 `.sr-only`，色塊與線段預覽保留 |
+| `DrawingToolbar` | 「模式：開/關」＋「線色」文字 | 「畫線」／開啟中「畫線中」（`aria-label="畫線模式"`）＋「線色」文字改 `.sr-only`，色塊與線段預覽保留 |
 | `ShareMenu` | 分享URL／複製圖片／分享圖片 | 連結（`aria-label="分享URL"`）／分享圖，**不顯示「複製圖片」** |
 
 - 隱藏一律用 `.sr-only`（`index.css` 的共用類別：1px + `clip-path: inset(50%)`）而非 `display: none`，保留在無障礙樹裡。
 - 行動版拿掉「複製圖片」是刻意的：手機要把圖貼到別的 App，走系統分享面板（`navigator.share`）比剪貼簿直接，且橫向空間有限。見 [`share.md`](share.md)。
+
+## 觸控手勢與觸控目標（responsive3）
+
+### 畫線 vs. pan/zoom
+
+畫線模式的手勢互斥本身由 `DrawingController` 負責（`handleScroll`/`handleScale` 關閉、多指一律不畫線），細節見 [`drawing.md`](drawing.md#觸控只認單指responsive3)。responsive 這邊只有兩件事：
+
+- `.chart-container-drawing`（`ChartContainer.css`）在畫線模式加 `touch-action: none` + `user-select: none` + `-webkit-touch-callout: none`，擋掉瀏覽器層級的捲動／雙擊縮放與 iOS 長按選取。非畫線模式不設，原生 pan/zoom 照舊。
+- **模式提示只做在工具列**：行動版按鈕開啟時文字為「畫線中」，`aria-pressed='true'` 由淡底改**實心** accent。曾評估在圖表加外框＋角落浮標，使用者選擇不加畫面元素。
+
+### 觸控目標 ≥44px（WCAG 2.5.5 / Apple HIG）
+
+行動版所有可點元素至少 44px 高，做法是**三個既有的斷點 class 後代選擇器**，不另外抄一份斷點數字（斷點常數已在 JS/CSS 各寫一份，見下方已知限制）：
+
+| 選擇器 | 涵蓋 |
+|---|---|
+| `.app-header-mobile button, input, .drawing-toolbar-color-label`（`AppLayout.css`） | 行動版頁首：查詢／畫線／連結／分享圖／設定、代號輸入框、選色塊（另設 `width: 44px`）、代號下拉每一列（`.chart-toolbar-suggestion`） |
+| `.overlay-panel-body button, select, input:not([type='radio']), .data-source-option`（`OverlayPanel.css`） | 設定面板全部控制項；`button` 另加 `min-width: 44px`（「移除」「✕」這類短字按鈕橫向也要夠寬） |
+| `.app-mobile .indicator-legend button, select, input`（`IndicatorLegend.css`） | 圖例 chip 與參數小面板（此元件桌面／行動共用同一份節點，故須用 `.app-mobile` 限定） |
+
+兩個實作細節：
+
+- **`input` 必須一併設 `box-sizing: border-box`**：`input` 預設 `content-box`，`min-height: 44px` 會再疊上 padding 與框線變成 53px（`button` 的 UA 預設是 `border-box`，不受影響）。
+- **`input[type='radio']` 排除**：拉高替換元素會把圓鈕本身撐大，改讓外層 `.data-source-option` label（整列 44px、滿寬）提供可點面積。
+
+桌面版完全不受影響（三個選擇器都掛在只有行動版才出現的 class 下）。
 
 ## `App.tsx` 的相關狀態
 
@@ -168,15 +194,24 @@ interface AppLayoutProps {
 - 從小面板按「移除」→ 指標與 chip 一起消失、面板自動關閉。
 - 改 MA 週期 20 → 60，chip 文字即時變成 `MA(60)`。
 
+**responsive3（390×844 量測 DOM，同上以程式化 `click()` 驅動）**
+
+- 頁首 7 個控制項（代號輸入、查詢、畫線、選色塊、連結、分享圖、設定）全部 44px 高，選色塊 44×44。
+- 設定面板：`✕` 44×44、資料源兩個 label 各 44×356.9（radio 本身仍 13px，靠 label 提供面積）、三個「+ 指標」鈕與兩個區塊標題 44、指標參數 number 欄位 44×56、色塊 44×44、「移除」44×44。
+- 圖例：chip 44×123.9；chip 小面板的 `✕`、5 個參數欄位、「移除」全部 44。
+- 畫線模式開啟後 `.chart-container` 加上 `chart-container-drawing`，computed `touch-action: none`、`user-select: none`；按鈕文字「畫線中」、`aria-pressed="true"`、背景 `rgb(192,132,252)`（實心 accent）/ 文字 `rgb(22,23,29)`。
+- 桌面 1280×800 重新載入回測：頁首控制項仍為 35.2px、選色塊 22px（三個選擇器都沒外溢），無 console error。
+- 多指手勢改用單元測試覆蓋（fake `TouchEvent`），沙盒無法產生真實觸控事件序列；`webkitTouchCallout` 在桌面 Chrome 讀不到（iOS 專屬屬性）。
+
 **只能人工測（尚未執行）**
 
 - 拖曳視窗跨越 1024px 的**即時**切換、DevTools 裝置模擬旋轉（沙盒收不到 `matchMedia` change 事件）。
-- 真機觸控操作手感（responsive3 的範圍）。
+- 真機（iOS Safari / Android Chrome）觸控操作手感：非畫線模式單指平移＋雙指縮放、畫線模式單指拖曳畫線不誤觸平移、模式提示是否足夠明顯（responsive3 驗收條件 1–3）。
 
 ## 已知限制 / 尚未實作
 
 - **佈局切換的即時性未在沙盒驗證**：斷點事件與 ResizeObserver 在 hidden pane 不觸發，只驗證過「以該尺寸重新載入」的結果，見 [`technical-debt.md`](../project-planning/technical-debt.md)。
 - **斷點常數在 JS 與 CSS 各寫一份**，且邊界重疊（`index.css` 的 `@media (max-width: 1024px)` 與 `useResponsive` 的 `min-width: 1024px` 在**正好 1024px** 時會同時成立），見 [`technical-debt.md`](../project-planning/technical-debt.md)。
 - **設定面板沒有 Esc 關閉與焦點管理**（刻意做成非模態，見 [`technical-debt.md`](../project-planning/technical-debt.md)）。
-- **觸控手勢未調整**：畫線模式與 pan/zoom 的互斥、觸控目標尺寸屬 `responsive3`，尚未實作。
+- **觸控手勢與 44px 觸控目標已實作（responsive3），但只有沙盒 DOM 量測與單元測試背書**：真機（iOS Safari / Android Chrome）的手感驗收尚未執行，見 [`technical-debt.md`](../project-planning/technical-debt.md)。
 - 圖表本身的配色仍寫死、不跟隨 light/dark 主題（既有技術債，responsive 模組未處理）。

@@ -3,6 +3,18 @@
   height: 100%;
 }
 
+/*
+ * 畫線模式（responsive3 的觸控調整）：
+ * - `touch-action: none` 把捲動、慣性滑動與雙擊縮放整組交還給我們的 touch handler。
+ *   非畫線模式不設，圖表原生 pan/zoom 仍由 lightweight-charts 自己的 preventDefault 處理。
+ *   （`touchmove` 的 preventDefault 只在真的拖曳中才呼叫，起點落在量能 pane 之類的情況擋不住，
+ *   得靠這行避免整頁跟著滑。）
+ * - 停用文字選取與 iOS 長按的 callout／放大鏡，長線拖曳到一半不會被系統選取 UI 打斷。
+ */
 .chart-container-drawing {
   cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }

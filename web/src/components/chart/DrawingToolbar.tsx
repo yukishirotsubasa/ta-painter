@@ -35,7 +35,11 @@ export function DrawingToolbar({
         aria-label={compact ? '畫線模式' : undefined}
         onClick={() => onDrawingModeChange(!drawingMode)}
       >
-        {compact ? '畫線' : drawingMode ? '模式：開' : '模式：關'}
+        {/*
+         * responsive3：行動版開啟時文字改成「畫線中」。手指在圖表上時 pan/zoom 是被關掉的，
+         * 按鈕若只靠顏色表達狀態，使用者容易以為是手勢失靈而不是模式使然。
+         */}
+        {compact ? (drawingMode ? '畫線中' : '畫線') : drawingMode ? '模式：開' : '模式：關'}
       </button>
       <label className="drawing-toolbar-color-label" htmlFor="drawing-toolbar-color" title="畫線前選色，畫出後不可更改">
         <span className={compact ? 'sr-only' : undefined}>線色</span>

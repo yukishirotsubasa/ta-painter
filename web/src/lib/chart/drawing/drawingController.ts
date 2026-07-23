@@ -49,6 +49,9 @@ const MAIN_PANE_INDEX = 0;
  * （選線改色因觸控/桌面上選取單條線的操作成本過高而不提供）。
  *
  * share2：`addLine()` 讓 URL 還原不必經過拖曳事件也能建立線條，與拖曳路徑共用同一份線條管理邏輯。
+ *
+ * responsive3：觸控只認單指——多指（縮放手勢）一律不畫線並丟棄進行中的那一筆，見 `isMultiTouch()`；
+ * 瀏覽器層級的捲動／雙擊縮放則由 `.chart-container-drawing` 的 `touch-action: none` 擋掉。
  */
 export class DrawingController {
   private readonly chart: IChartApi;
@@ -263,13 +266,27 @@ export class DrawingController {
     this.beginDrag(event.clientX, event.clientY);
   }
 
+  /**
+   * 多指觸控一律不畫線（responsive3）：第二指落下代表縮放／平移意圖，
+   * 此時要連「已經開始的那一筆」一起丟掉——否則第二指的 crosshair 會被當成同一次拖曳的終點，
+   * 放開時定案出一條使用者沒打算畫的歪線。丟棄後 `dragging` 為 false，
+   * 後續 crosshair move 與 touchend 都自然成為 no-op，不需另外記狀態。
+   */
+  private isMultiTouch(event: TouchEvent): boolean {
+    if (event.touches.length <= 1) return false;
+    this.discardActiveLine();
+    return true;
+  }
+
   private onTouchStart(event: TouchEvent): void {
+    if (this.isMultiTouch(event)) return;
     const touch = event.touches[0];
     if (!touch) return;
     this.beginDrag(touch.clientX, touch.clientY);
   }
 
   private onTouchMove(event: TouchEvent): void {
+    if (this.isMultiTouch(event)) return;
     if (this.dragging) event.preventDefault();
   }
 

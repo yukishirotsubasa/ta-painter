@@ -402,6 +402,107 @@ describe('DrawingController color API (drawing7)', () => {
   });
 });
 
+describe('DrawingController touch gestures (responsive3)', () => {
+  let fakeWindow: ReturnType<typeof createFakeEventTarget>;
+
+  beforeEach(() => {
+    fakeWindow = createFakeEventTarget();
+    vi.stubGlobal('window', fakeWindow);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function setup() {
+    const { chart, fireCrosshairMove } = createFakeChart();
+    const series = createFakeSeries(chart);
+    const container = createFakeContainer();
+    const controller = new DrawingController({ chart, series, container });
+    controller.setEnabled(true);
+    return { controller, container, series, fireCrosshairMove };
+  }
+
+  /** 假 TouchEvent：只需要 `touches.length`、第一指座標與 `preventDefault`。 */
+  function touchEvent(points: { clientX: number; clientY: number }[]) {
+    return { touches: points, preventDefault: vi.fn() };
+  }
+
+  it('single-finger drag draws a line just like the mouse path', () => {
+    const { controller, container, fireCrosshairMove } = setup();
+
+    container.dispatch('touchstart', touchEvent([{ clientX: 10, clientY: 10 }]));
+    fireCrosshairMove({ point: { x: 50, y: 60 }, time: 50 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
+    container.dispatch('touchend', {});
+
+    expect(controller.getLines()).toHaveLength(1);
+  });
+
+  it('a second finger landing mid-drag discards the in-progress line', () => {
+    const { controller, container, series, fireCrosshairMove } = setup();
+
+    container.dispatch('touchstart', touchEvent([{ clientX: 10, clientY: 10 }]));
+    fireCrosshairMove({ point: { x: 50, y: 60 }, time: 50 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
+    expect(series.attachPrimitive).toHaveBeenCalledTimes(1);
+
+    // 第二指落下＝縮放意圖：預覽線立刻卸下，之後的 crosshair 與放開都不該再定案任何線。
+    container.dispatch(
+      'touchstart',
+      touchEvent([
+        { clientX: 10, clientY: 10 },
+        { clientX: 200, clientY: 200 },
+      ]),
+    );
+    expect(series.detachPrimitive).toHaveBeenCalledTimes(1);
+
+    fireCrosshairMove({ point: { x: 300, y: 300 }, time: 300 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
+    container.dispatch('touchend', {});
+
+    expect(controller.getLines()).toEqual([]);
+    expect(series.attachPrimitive).toHaveBeenCalledTimes(1);
+  });
+
+  it('a two-finger touchstart never begins a drag', () => {
+    const { controller, container, series, fireCrosshairMove } = setup();
+
+    container.dispatch(
+      'touchstart',
+      touchEvent([
+        { clientX: 10, clientY: 10 },
+        { clientX: 200, clientY: 200 },
+      ]),
+    );
+    fireCrosshairMove({ point: { x: 50, y: 60 }, time: 50 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
+    container.dispatch('touchend', {});
+
+    expect(series.attachPrimitive).not.toHaveBeenCalled();
+    expect(controller.getLines()).toEqual([]);
+  });
+
+  it('preventDefault on touchmove only while a single-finger drag is in progress', () => {
+    const { container } = setup();
+
+    // 尚未按下：不攔截，讓圖表／頁面維持原本行為。
+    const beforeDrag = touchEvent([{ clientX: 10, clientY: 10 }]);
+    container.dispatch('touchmove', beforeDrag);
+    expect(beforeDrag.preventDefault).not.toHaveBeenCalled();
+
+    container.dispatch('touchstart', touchEvent([{ clientX: 10, clientY: 10 }]));
+
+    const dragging = touchEvent([{ clientX: 20, clientY: 20 }]);
+    container.dispatch('touchmove', dragging);
+    expect(dragging.preventDefault).toHaveBeenCalled();
+
+    // 多指：不攔截也不畫，手勢交還給瀏覽器／圖表。
+    const pinching = touchEvent([
+      { clientX: 20, clientY: 20 },
+      { clientX: 200, clientY: 200 },
+    ]);
+    container.dispatch('touchmove', pinching);
+    expect(pinching.preventDefault).not.toHaveBeenCalled();
+  });
+});
+
 describe('DrawingController.addLine (share2)', () => {
   let fakeWindow: ReturnType<typeof createFakeEventTarget>;
 

@@ -44,3 +44,29 @@
   border-color: var(--accent-border);
 }
 
+/*
+ * 觸控目標下限（responsive3）：行動版頁首的每個可點元素至少 44px 高（Apple HIG / WCAG 2.5.5 的建議值）。
+ * 用 `.app-header-mobile` 後代選擇器而非 media query——這個 class 由 useResponsive 的斷點決定，
+ * 不必再抄一份斷點數字（斷點常數在 JS/CSS 各寫一份的問題見 technical-debt.md）。
+ * 只放大點擊面積，字級與留白維持原樣，桌面版完全不受影響。
+ */
+.app-header-mobile button,
+.app-header-mobile input,
+.app-header-mobile .drawing-toolbar-color-label {
+  min-height: 44px;
+  /* input 預設 content-box，不改的話 min-height 會再加上 padding 與框線變成 53px。 */
+  box-sizing: border-box;
+}
+
+/* 色塊本身也要點得到：拉寬到 44px，配合上面的 min-height 成為完整的 44×44 目標。 */
+.app-header-mobile .drawing-toolbar-color {
+  width: 44px;
+}
+
+/* 代號下拉的每一列（li，非 button）同樣要有 44px 可點高度。 */
+.app-header-mobile .chart-toolbar-suggestion {
+  min-height: 44px;
+  box-sizing: border-box;
+  align-items: center;
+}
+
