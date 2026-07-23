@@ -52,6 +52,25 @@ git config core.hooksPath .githooks
 
 存在理由：`npm test`（vitest）不跑型別檢查，曾發生「測試全過但 `tsc -b` 不過」的 commit 進到 `main`，直到 Pages 部署才失敗（見 [technical-debt.md](../project-planning/technical-debt.md)）。此 hook 把該防線移到 push 前。
 
+## worker CI 測試 gate
+
+`.github/workflows/worker-ci.yml`：
+
+- 觸發條件：push 到 `main` 或 PR，且變更檔案落在 `worker/**`（或 workflow 檔自身）；另可手動 `workflow_dispatch`。只動 `web/**` 不會觸發
+- 步驟：`actions/checkout` → `denoland/setup-deno@v2`（`deno-version: v2.x`）→ `deno task check` → `deno task test`，工作目錄固定 `worker/`
+- 權限只有 `contents: read`；`concurrency` group 依 ref 取消同分支的舊 run
+- 注意：`worker/` 由 Deno Deploy 的 GitHub 連動自動部署，這支 workflow **不會阻擋部署**，只是讓測試／型別錯誤在 push 後盡快標紅（見 [proxy.md](./proxy.md) 與 [technical-debt.md](../project-planning/technical-debt.md)）
+
+worker 相關指令（工作目錄 `worker/`，需本機安裝 Deno 2）：
+
+```bash
+deno task dev    # deno run --allow-net --allow-env --watch main.ts
+deno task check  # deno check main.ts handler_test.ts
+deno task test   # deno test
+```
+
+`check` 顯式列出 `handler_test.ts`，因為測試檔不在 `main.ts` 的 import graph 內，只寫 `deno check main.ts` 檢查不到。
+
 ## Node 版本需求
 
 本機 Node 需 `>=20.19.0`（`web/package.json` 依賴 `vite@^8.1.5` + rolldown 原生 binding，低版本 Node 會出現 `Cannot find native binding` 錯誤）。曾一度為繞過此問題暫時降版 `vite`/`@vitejs/plugin-react`，已於本機升級 Node 後恢復為 scaffold 預設版本，詳見 [technical-debt.md](../project-planning/technical-debt.md)。

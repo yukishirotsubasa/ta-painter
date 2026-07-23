@@ -44,11 +44,12 @@ GET /proxy/yahoo?path=<url-encoded 上游路徑+query>
 
 - 專案：`worker/`（`main.ts` 為 Deno Deploy entrypoint、`handler.ts` 為核心邏輯、`handler_test.ts` 為 unit test）
 - 本機開發：`deno task dev`（`deno run --allow-net --allow-env --watch main.ts`，監聽 `http://localhost:8000/`）
-- 測試：`deno task test`（`deno test`，只驗證 `resolveProxyTarget()` 的路徑解析邏輯，不打真實網路）
+- 測試：`deno task test`（`deno test`，只驗證 `resolveProxyTarget()` 的路徑解析邏輯，不打真實網路）；型別檢查：`deno task check`（`deno check main.ts handler_test.ts`）
+- CI：`.github/workflows/worker-ci.yml` 監聽 `worker/**`，push／PR 時跑上面兩個 task（見 [deployment.md](./deployment.md)）
 - 正式部署：Deno Deploy 的 GitHub 連動（`app.deno.com` → New app → 選 `yukishirotsubasa/ta-painter` repo → entrypoint 填 `worker/main.ts`），push 到 `main` 就自動重新部署，**不需要**手動跑 CLI 部署指令，也沒有掛在 `.github/workflows/deploy-pages.yml` 上（那個 workflow 只監聽 `web/**`）。
 - 目前正式網址：`https://ta-painter.yukishirotsubasa.deno.net`
 
 ## 已知限制
 
-- Deno Deploy 的 GitHub 連動部署沒有跑 `deno task test` 當 gate，push 到 `main` 即使測試會失敗也照樣部署，詳見 [technical-debt.md](../project-planning/technical-debt.md)。
+- Deno Deploy 的 GitHub 連動部署本身沒有測試 gate：`worker-ci.yml` 與部署各自獨立觸發，測試失敗只會讓 CI 標紅，**不會阻止**該 commit 被部署上去，詳見 [technical-debt.md](../project-planning/technical-debt.md)。
 - 上游站台（TPEx／Yahoo）的反爬蟲/IP 封鎖規則不受我方控制，未來可能再次變化導致 proxy 失效，詳見 technical-debt.md。

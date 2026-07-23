@@ -1,0 +1,42 @@
+name: Worker CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-ci.yml'
+  pull_request:
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Deno Deploy 會自動部署 worker/，這裡擋不住部署，但能在 push 後盡快標紅。
+      - name: Type check
+        run: deno task check
+
+      - name: Test
+        run: deno task test

@@ -90,14 +90,16 @@
 - **決策（2026-07-23）**：**實作，最優先**。已實際造成一次部署失敗，成本只有一個 workflow yml 或 husky hook，且後續其他任務都會改到型別敏感的程式碼，先立好 gate 收益最大。任務優先級由 Low 調為 High。
 - **對應任務**：[ci1](task-pool/ci1.md)（已完成，2026-07-24）。
 
-## `worker/` 的 Deno Deploy 部署沒有 CI 測試 gate
+## ~~`worker/` 的 Deno Deploy 部署沒有 CI 測試 gate~~（已解：ci2 加 `worker-ci.yml`，2026-07-24）
 
+- **解法（ci2，2026-07-24）**：新增 `.github/workflows/worker-ci.yml`，`paths` 只監聽 `worker/**`（＋ workflow 檔自身），push 到 `main`／PR／`workflow_dispatch` 皆會觸發，用 `denoland/setup-deno@v2`（`deno-version: v2.x`）依序跑 `deno task check`、`deno task test`（`working-directory: worker`）。同時在 `worker/deno.json` 新增 `check` task（`deno check main.ts handler_test.ts`——測試檔不在 `main.ts` 的 import graph，需顯式列入）。本機實測 check 通過、test 5 passed / 0 failed。細節見 [`docs/deployment.md`](../docs/deployment.md)。
+- **殘留限制**：此 workflow **不會阻止** Deno Deploy 的自動部署（兩者各自獨立觸發），壞的 commit 仍會被部署上去，CI 只是讓錯誤在 push 後幾分鐘內被標紅看見。要真正 gate 需改走 Deno Deploy CLI 部署或加 pre-push hook，成本與收益不成比例，暫不做。
 - **來源任務**：[infra2](task-pool/infra2.md)
 - **狀況**：`worker/`（CORS proxy）透過 Deno Deploy 的 GitHub 連動自動部署，push 到 `main` 就會重新部署，中間沒有任何步驟跑 `deno task test`。跟 `web/` 不同——`web/` 至少有 `deploy-pages.yml` 在部署前跑 `npm run build`（`tsc -b` 會攔型別錯誤，見下面「沒有本機 pre-commit/CI type-check」那則），`worker/` 完全沒有對應的 CI 檢查步驟。
 - **影響**：目前 `handler.ts` 邏輯簡單、`handler_test.ts` 只有 5 個純函式 unit test，人工跑過沒問題；但未來若改動 proxy 邏輯，即使測試沒過、或 `deno check` 型別有誤，push 到 `main` 一樣會觸發部署，錯誤要等到 curl 打正式站台才會發現。
 - **建議**：加一個獨立的 GitHub Actions workflow（只監聽 `worker/**`，比照 `deploy-pages.yml` 只監聽 `web/**` 的做法），push 前跑 `deno task test`（必要時加 `deno check main.ts`），測試沒過就讓 CI 標紅，即使不會阻止 Deno Deploy 的自動部署，至少能在 push 後盡快被看到。
-- **決策（2026-07-23）**：**延後**。任務檔已存在且方案明確，但 `worker/` 極少變動、`handler.ts` 邏輯簡單，本輪不排入；`ci2` 維持「等待」，排在執行順序最後。
-- **對應任務**：[ci2](task-pool/ci2.md)。
+- **決策（2026-07-23）**：**延後**。任務檔已存在且方案明確，但 `worker/` 極少變動、`handler.ts` 邏輯簡單，本輪不排入；`ci2` 維持「等待」，排在執行順序最後。（2026-07-24 已改為實作。）
+- **對應任務**：[ci2](task-pool/ci2.md)（已完成，2026-07-24）。
 
 ## ~~TPEx／Yahoo 的反爬蟲規則不受控，proxy 可能再次失效且無監控~~（已解：data8 使用端即時提示，2026-07-24）
 
