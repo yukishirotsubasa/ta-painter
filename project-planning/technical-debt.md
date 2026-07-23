@@ -1,12 +1,22 @@
 # Technical Debt
 
+> **決策標記說明（2026-07-23 全面盤點後導入）**：每則債項都帶一行 `**決策**`，共四種——
+>
+> - **實作**：已排入 `task-list.md`，`對應任務` 指向該任務檔。
+> - **延後**：已有任務檔但本輪不排入。
+> - **Skip**：維持追蹤、不排任務，條件成熟再回頭處理（條目保留在清單上）。
+> - **不處理**：關閉不再追蹤，標題加刪除線。
+>
+> 盤點結果：未解 21 則 → 實作 7、延後 1、Skip 6、不處理 6。清單上不應再出現沒有決策標記的未解條目。
+
 ## ChartContainer 指標 reconcile 邏輯對每個已掛載實例無條件呼叫 update()，未做變更診斷
 
 - **來源任務**：[indicator5](task-pool/indicator5.md)
 - **狀況**：`ChartContainer.tsx` 的指標 reconcile `useEffect`（依賴 `[data, indicators]`）在每次觸發時，對所有已掛載的指標實例都呼叫 `handle.update(data, instance.params)`，不論該實例的 `params` 是否真的變動、或變動的是不是別的實例。這是刻意選擇的簡化實作（避免對 `IndicatorInstance` 做深層比較），目前每個指標的 `compute()` 都是輕量純函式（MA 的簡單移動平均），重複呼叫成本可忽略。
 - **影響**：目前規模下沒有可觀察的效能問題。但當已掛載指標數量變多、或未來加入 `compute()` 較重的指標（例如需要大量歷史資料的複雜運算）時，調整單一實例參數會連帶重算並重繪其他未變動的指標，可能造成不必要的效能開銷與圖表閃爍。
 - **建議**：若未來觀察到效能問題，可在 `IndicatorInstance` 或 reconcile 邏輯中加入變更偵測（例如比對 `params` 的淺層 diff 或維護 `IndicatorInstance` 的版本號/參考相等性判斷），只對實際變動的實例呼叫 `update()`。
-- **對應任務**：暫無（defer，現無效能問題，觀察到再處理）。
+- **決策（2026-07-23）**：**實作**。雖然目前無可觀察的效能問題，但變更偵測的成本很低（`params` 是扁平 `Record<string, number | string>`，淺層比較即足夠），先做掉可避免未來加入重運算指標時才回頭改動這段共用邏輯。
+- **對應任務**：[indicator11](task-pool/indicator11.md)。
 
 ## ChartContainer 圖表配色寫死，未跟隨 light/dark 主題
 
@@ -15,8 +25,10 @@
 - **~~共用常數重複定義~~（已解，indicator8，2026-07-23）**：漲跌色已抽出至 [`lib/chart/colors.ts`](../web/src/lib/chart/colors.ts)（`UP_COLOR`/`DOWN_COLOR`/`DEFAULT_LINE_COLOR`），`ChartContainer.tsx`（量能柱）與 `macd.ts`（histogram）改共用同一份，不再各自重複定義；布林三軌、MACD DIF/DEA 線色亦改為可調參數（預設沿用 `DEFAULT_LINE_COLOR`/`#ff9800`）。**唯「配色不跟隨系統 light/dark 主題」這部分仍未解**（見下）。
 - **影響**：目前介面沒有主題切換 UI，尚未有可觀察的視覺錯誤；但 responsive/RWD 模組（`responsive1`）或任何未來的主題切換功能上線後，圖表本身（含量能柱與 MACD histogram、各指標線的預設色）會維持深色配色不跟著換，造成視覺不一致。
 - **現況（2026-07-23 更新，share3）**：截圖（`lib/chart/screenshot.ts`）**已經**跟隨主題——`resolvePageBackgroundColor()` 讀 `getComputedStyle(document.documentElement)` 的 `--bg` 來補底色，會隨 `prefers-color-scheme` 變動。這反而讓落差更明顯：淺色主題下截圖會是**白底 + 深色格線 + 深色文字**（圖表內部配色仍寫死），比畫面上看起來更突兀。
-- **建議**：實作淺色主題支援時，改用 `window.matchMedia('(prefers-color-scheme: dark)')`（或未來的主題 state）動態算出色票，並在偵測到主題變化時對圖表與各指標的 series 呼叫對應的 `applyOptions()`/重新 `setData()` 更新；共用色票已集中在 `lib/chart/colors.ts`，屆時可直接讓該檔依主題輸出兩套色值。截圖底色屆時可直接沿用同一份色票，不必再另外讀 CSS variable。
-- **對應任務**：共用常數抽出已由 [indicator8](task-pool/indicator8.md) 完成；主題跟隨系統的部分留 responsive 模組。
+- **決策（2026-07-23）**：**實作，但方向改為「整站固定 dark」而非「跟隨系統主題」**。理由是分享情境——同一張圖或同一條連結會在不同人的裝置上開啟，若配色隨各自的系統主題變動，會造成「同一份內容看起來不一樣」甚至難以瀏覽。固定深色後，圖表原本寫死的深色配色反而變成正確值，只需把色值搬進 `colors.ts` 去重即可。
+- **原方向（已放棄）**：用 `window.matchMedia('(prefers-color-scheme: dark)')` 動態算色票、主題變化時對圖表與各指標 series 呼叫 `applyOptions()`／重新 `setData()`，並讓 `lib/chart/colors.ts` 依主題輸出兩套色值。**不做**，連帶也不做主題切換 UI。
+- **實際做法**：`index.css` 把 `@media (prefers-color-scheme: dark)` 的變數值寫進 `:root` 並刪掉該 media query、`color-scheme` 改 `dark`；`colors.ts` 新增 `CHART_TEXT_COLOR`/`CHART_GRID_COLOR` 供 `ChartContainer.tsx` 引用；`index.html` 加 `theme-color`。`screenshot.ts` 的 `resolvePageBackgroundColor()` 不動——`--bg` 固定後其結果自然恆定。
+- **對應任務**：共用常數抽出已由 [indicator8](task-pool/indicator8.md) 完成；固定 dark 主題由 [chart4](task-pool/chart4.md) 處理。
 
 ## PaneIndexAllocator 尚未驗證多個 separate-pane 指標同時存在的 index 一致性
 
@@ -24,7 +36,9 @@
 - **狀況**：`createPaneIndexAllocator()`（`lib/chart/paneIndexAllocator.ts`）只是邏輯上的計數器，並未對應 lightweight-charts 實際的 pane 陣列行為——當一個 pane 內最後一個 series 被移除時，lightweight-charts 會自動移除該 pane 並讓後面的 pane index 往前遞補，但 allocator 內部記錄的「已配置 index 集合」不會知道這件事。目前唯一的 separate-pane 指標是 MACD，已驗證「新增 → 移除 → 再新增」單一 MACD 實例時 pane index 分配正確（見 `docs/indicators.md` 手動驗證紀錄），但**尚未驗證兩個以上 separate-pane 指標同時存在、且移除中間那個時**，allocator 記錄的 index 是否仍對應 lightweight-charts 實際的 pane 陣列位置。
 - **影響**：目前規模下（只有 MACD 一種 separate-pane 指標）不會觸發這個情境，沒有可觀察的錯誤。但未來若新增第二種 separate-pane 指標（例如 RSI），使用者同時掛載兩個 separate-pane 指標後移除較前面那個，allocator 釋放的 index 可能與 lightweight-charts 實際遞補後的 pane 位置不一致，導致後續 `mount()`/`update()` 操作到錯誤的 pane。
 - **建議**：新增第二種 separate-pane 指標時，需實測「兩個 separate-pane 指標同時掛載 → 移除前面那個 → 檢查後面那個的 pane 是否還在正確位置」這個情境；若證實有錯位問題，需改為由 `ChartContainer` 直接查詢 `chart.panes()` 目前實際數量/位置來決定 index，而不是讓 allocator 自己維護獨立計數器。
-- **對應任務**：無獨立任務；於新增第 2 個 separate-pane 指標時一併實測處理。
+- **決策（2026-07-23）**：**實作**，且不等到新增第二種 separate-pane 指標——直接改成由 `chart.panes()` 查詢實際 pane 陣列決定 index，allocator 不再自行維護計數器，從根本上消除「獨立計數器與函式庫實際行為可能不一致」這件事。介面與三個指標的 `mount()` 簽章維持不變。
+- **驗證限制**：沙盒環境無法驗證真實 canvas／pane 行為，改以 fake `chart` 物件（`panes()` 回傳長度可變的陣列）做單元測試，另由使用者在真實瀏覽器手測 MACD 的新增／移除。
+- **對應任務**：[indicator10](task-pool/indicator10.md)。
 
 ## ~~`ChartToolbar` 輸入框不會跟隨外部 `stockNo` 變化重新同步~~（已解：symbol2 加上同步 `useEffect`，2026-07-23）
 
@@ -67,6 +81,7 @@
 - **狀況**：drawing4 完成時（commit `9016432`）`TrendLinePrimitive.hitTest()` 回傳 `boolean`，但專案實裝的 `lightweight-charts@5.2.0` 型別要求 `ISeriesPrimitiveBase.hitTest` 回傳 `PrimitiveHoveredItem | null`。`npm test`（vitest）當時全數通過（測試只驗證行為，不跑型別檢查），但這個型別錯誤直到 push 後才被 GitHub Actions 的 `npm run build`（`tsc -b && vite build`，見 `.github/workflows/deploy-pages.yml`）攔下，導致部署失敗。本地沒有任何 pre-commit hook 或本機 CI 腳本會在 commit 前跑 `tsc -b`。已於本次 session 修正（`hitTest` 改回傳 `PrimitiveHoveredItem | null`，命中回傳 `{ cursorStyle: 'pointer', externalId: 'trend-line', zOrder: 'normal' }`，未命中回傳 `null`；`DrawingController.hitTestLines()` 改用 `!== null` 判斷），詳見 [`docs/drawing.md`](../docs/drawing.md)。
 - **影響**：目前僅發生一次（型別錯誤，非邏輯錯誤，實際互動行為不受影響），但這個落差模式（本機只跑 `npm test` 就 commit，未跑 `npm run build`）未來仍可能重演，尤其是升級第三方套件版本（如 lightweight-charts）後型別介面變動時最容易中招，且要等 push 後才會在 CI 發現，拖慢回饋速度。
 - **建議**：養成 commit/push 前跑一次 `npm run build`（或至少 `tsc -b`）的習慣；若要根治，可考慮加 Husky pre-commit hook 跑 `tsc -b`，或在 `deploy-pages.yml` 之外另建一個「PR/push 到非 main 分支」也會跑 `npm run build` 的 CI workflow，讓型別錯誤在合併前就被攔下而非等到部署才發現。
+- **決策（2026-07-23）**：**實作，最優先**。已實際造成一次部署失敗，成本只有一個 workflow yml 或 husky hook，且後續其他任務都會改到型別敏感的程式碼，先立好 gate 收益最大。任務優先級由 Low 調為 High。
 - **對應任務**：[ci1](task-pool/ci1.md)。
 
 ## `worker/` 的 Deno Deploy 部署沒有 CI 測試 gate
@@ -75,6 +90,7 @@
 - **狀況**：`worker/`（CORS proxy）透過 Deno Deploy 的 GitHub 連動自動部署，push 到 `main` 就會重新部署，中間沒有任何步驟跑 `deno task test`。跟 `web/` 不同——`web/` 至少有 `deploy-pages.yml` 在部署前跑 `npm run build`（`tsc -b` 會攔型別錯誤，見下面「沒有本機 pre-commit/CI type-check」那則），`worker/` 完全沒有對應的 CI 檢查步驟。
 - **影響**：目前 `handler.ts` 邏輯簡單、`handler_test.ts` 只有 5 個純函式 unit test，人工跑過沒問題；但未來若改動 proxy 邏輯，即使測試沒過、或 `deno check` 型別有誤，push 到 `main` 一樣會觸發部署，錯誤要等到 curl 打正式站台才會發現。
 - **建議**：加一個獨立的 GitHub Actions workflow（只監聽 `worker/**`，比照 `deploy-pages.yml` 只監聽 `web/**` 的做法），push 前跑 `deno task test`（必要時加 `deno check main.ts`），測試沒過就讓 CI 標紅，即使不會阻止 Deno Deploy 的自動部署，至少能在 push 後盡快被看到。
+- **決策（2026-07-23）**：**延後**。任務檔已存在且方案明確，但 `worker/` 極少變動、`handler.ts` 邏輯簡單，本輪不排入；`ci2` 維持「等待」，排在執行順序最後。
 - **對應任務**：[ci2](task-pool/ci2.md)。
 
 ## TPEx／Yahoo 的反爬蟲規則不受控，proxy 可能再次失效且無監控
@@ -83,8 +99,10 @@
 - **狀況**：實作過程中實測發現兩個上游站台的存取限制都是「非官方文件、隨時可能變動」的規則：TPEx 會封鎖 Cloudflare Workers 的出站 IP range（因此把 proxy 從 Cloudflare Worker 改成 Deno Deploy，見 [`docs/proxy.md`](../docs/proxy.md)）、Yahoo Finance 對非瀏覽器 `User-Agent` 一律回 429（因此固定偽裝瀏覽器 UA）。這些都是對方站台當下的行為，沒有官方文件保證不會再變。
 - **影響**：若 TPEx 未來也開始封鎖 Deno Deploy 的出站 IP range、或 Yahoo 加強 bot 偵測（例如需要 JS challenge、更嚴格的 header 檢查），`data5`（`TpexProvider`）／`data6`（`YahooProvider`）會在沒有任何預警的情況下開始失敗，而目前沒有任何自動化健康檢查或告警機制會發現這件事，只能靠使用者回報「查不到資料」。
 - **現況（2026-07-22 更新）**：`data5`/`data6` 已完成。provider 對非預期狀態已有明確錯誤訊息——`TpexProvider` throw `TPEx 請求失敗：HTTP {status}` / `TPEx 查詢失敗：{stat}`；`YahooProvider` 所有 symbol 後綴皆失敗時 throw `Yahoo 查詢失敗（{stockNo}）：{description 或 HTTP status}`，方便日後快速判斷是不是上游又擋人。但**定期健康檢查／告警仍未實作**（此則技術債的核心未解）。
-- **建議**：加一個簡單的排程（例如 GitHub Actions cron）定期 curl 這兩個 proxy 端點（TPEx 個股、Yahoo `.TW`/`.TWO`），失敗時發通知，及早發現上游規則變動，而非等使用者回報。
-- **對應任務**：[ci3](task-pool/ci3.md)。
+- **決策（2026-07-23）**：**實作，但方向改為「使用端即時提示」而非「週期性健康檢查」**。上游出問題會**立即**影響使用者，而 cron 最快也要等下一個排程週期才發現，對使用者當下遇到的失敗毫無幫助；即使告警成功，使用者端仍只看得到一句原始錯誤訊息，不知道發生什麼事、也不知道該不該回報。
+- **原方向（已取消）**：GitHub Actions cron 定期 curl 兩個 proxy 端點、失敗時發通知。原任務 [ci3](task-pool/ci3.md) 標記取消並保留取消理由供追溯，已從 `task-list.md` 移除。
+- **實際做法**：資料層對錯誤分類（`upstream-blocked` / `no-data` / `unknown`），`App.tsx` **只在 `upstream-blocked` 時**於原始錯誤訊息下方追加固定文案，說明資料源可能已失效、請聯絡製作者。**只顯示文字，不附 GitHub Issues 連結或 email**；原始錯誤訊息保留顯示，方便回報時附上。
+- **對應任務**：[data8](task-pool/data8.md)（取代 ci3）。
 
 ## MA volume 來源的 pane index 在 `ma.ts` 硬編，與 `ChartContainer` 的 pane 佈局約定重複
 
@@ -92,7 +110,8 @@
 - **狀況**：`ma.ts` 為了讓 `source=volume` 的 MA 掛到量能 pane，直接寫死 `PRICE_PANE_INDEX = 0` / `VOLUME_PANE_INDEX = 1` 兩個常數。這份「pane 0=K 線、pane 1=量能」的知識實際上由 `ChartContainer.tsx` 擁有（`RESERVED_PANE_COUNT = 2` 與建立 candlestick/volume series 的順序決定），`ma.ts` 只是複製了同一份約定，兩邊沒有共用來源。這是刻意的簡化：MA 是 overlay 不走 `paneIndexAllocator`，而 allocator 目前也沒有「查詢保留 pane 語意」的 API。
 - **影響**：目前 pane 佈局固定，沒有可觀察問題。但若未來 `ChartContainer` 調整保留 pane 的數量或順序（例如把量能改成可關閉、或在 K 線與量能之間插入其他 reserved pane），`ma.ts` 的 `VOLUME_PANE_INDEX = 1` 會靜默指向錯誤的 pane（volume MA 掛錯位置或撐爆別的 scale），且 TypeScript 無法在編譯期攔到。
 - **建議**：把「保留 pane 的語意 → index」對應集中到單一來源，例如在 `paneIndexAllocator`（或新的 `lib/chart/panes.ts`）曝光 `PRICE_PANE_INDEX`/`VOLUME_PANE_INDEX` 具名常數，讓 `ChartContainer` 與 `ma.ts` 共同引用；或由 `mount()` 透過參數把量能 pane index 傳進來，而非在指標檔案內硬編。
-- **對應任務**：暫無（defer，pane 佈局變動時一併處理）。
+- **決策（2026-07-23）**：**實作**。抽 `lib/chart/panes.ts` 曝光具名常數供 `ChartContainer.tsx` 與 `ma.ts` 共同引用，成本很低且屬純重構，不必等 pane 佈局真的變動——那時才發現反而是靜默的錯誤 pane 指向。
+- **對應任務**：[indicator9](task-pool/indicator9.md)。
 
 ## `ma.ts` 仍保留自己的 `DEFAULT_COLOR`，未併入共用 `colors.ts`
 
@@ -100,7 +119,8 @@
 - **狀況**：indicator8 抽出 `lib/chart/colors.ts` 的 `DEFAULT_LINE_COLOR = '#2196f3'` 供布林/MACD 線色參數預設值使用，但 `ma.ts` 仍沿用自己既有的 `const DEFAULT_COLOR = '#2196f3'`（indicator7 留下），未改成 import `DEFAULT_LINE_COLOR`。這是刻意不擴大 scope 的取捨——indicator8 驗收只要求 `ChartContainer.tsx` 與 `macd.ts` 不重複定義，`ma.ts` 屬剛完成的 indicator7 檔案，為避免動到已測過的行為而未一併整併。
 - **影響**：兩個常數數值相同（`#2196f3`），目前無可觀察問題。但未來若要調整「預設線色」這個語意（例如整體改用另一個藍），需同時改 `colors.ts` 與 `ma.ts` 兩處，漏改一處會造成 MA 與布林/MACD 預設線色不一致。
 - **建議**：下次動到 `ma.ts` 時，把 `DEFAULT_COLOR` 改成 `import { DEFAULT_LINE_COLOR } from '../colors'`，讓三個指標共用單一預設線色來源。
-- **對應任務**：暫無（defer，動到 `ma.ts` 時順手整併）。
+- **決策（2026-07-23）**：**實作**。一行 `import` 的改動，與同樣動到 `ma.ts` 的 pane index 整併合併為同一個任務一次做完。
+- **對應任務**：[indicator9](task-pool/indicator9.md)。
 
 ## 股票清單的有效性 gate 只擋「整份為空」，單一分類／單一來源縮水會靜默通過
 
@@ -110,15 +130,17 @@
 - **建議**：把 gate 從「非空」加嚴為「合理」，兩個成本很低的方向：
   1. 每個 TWSE 分類各自要求至少 N 筆（例如 `股票` ≥ 500、`ETF` ≥ 100、`創新板` ≥ 1），任一類掛零就整體失敗。
   2. 與 repo 內既有的 `web/public/stock-list.json` 比對總數，驟降超過某比例（例如 10%）就失敗；`main.ts` 本來就會讀舊檔做內容比對，拿得到舊清單，改動很小。
-- **對應任務**：暫無（defer，symbol2 完成、清單實際被搜尋使用後再視情況加嚴）。
+- **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。目前三個分類名與實際頁面完全吻合，且清單每週更新、內容比對機制仍在；先維持現行「整份為空才失敗」的 gate。若日後真的發生某類靜默消失，上面兩個加嚴方向（分類下限／與舊檔比對總數驟降）成本都很低，屆時再做。
+- **對應任務**：暫無（Skip）。
 
-## 本機 Node 版本無法直接執行股票清單抓取腳本
+## ~~本機 Node 版本無法直接執行股票清單抓取腳本~~（決策：不處理，2026-07-23）
 
+- **決策：不處理（2026-07-23）**。使用者已明確決定不升級本機 Node，且「本機只跑測試、對真實線上來源實跑交給 CI（`workflow_dispatch`）」是可接受的工作模式——parser 的 32 個單元測試由 vitest 執行、不受 Node 版本影響，日常改動仍有測試保護。此則關閉、不再追蹤。以下為原始紀錄。
 - **來源任務**：[symbol1](task-pool/symbol1.md)（2026-07-23）
 - **狀況**：`web/scripts/stock-list/` 以 TypeScript 撰寫，靠 Node 內建的型別剝除（22.6+）直接執行 `.ts`，CI 已固定 Node 24。但本機目前是 Node 20，`npm run update-stock-list` 跑不起來；使用者已明確決定**不升級本機 Node**。本次驗證是用 `tsc --rewriteRelativeImportExtensions` 先轉譯到暫存目錄再執行，屬一次性手法，沒有留在 repo 裡。
 - **影響**：parser 的 32 個單元測試由 vitest 執行，不受本機 Node 版本影響，所以日常改動仍有測試保護；但「對真實線上來源實跑一次」這種端到端驗證，本機無法一鍵重現，只能靠 GitHub Actions 上的 `workflow_dispatch`，回饋比較慢。上游改版時的除錯體驗尤其受影響。
 - **建議**：若日後需要本機重跑，成本由低到高有三條路：(1) 用 `npx tsx scripts/stock-list/main.ts`（多一個 devDependency，不動 Node）；(2) 加一個 `vite-node` 或 `vitest` 的一次性 script；(3) 升級本機 Node 到 22.6+。在使用者維持現況的前提下，維持「本機只跑測試、實跑交給 CI」即可，不需預先處理。
-- **對應任務**：暫無（defer，使用者決定不升級本機 Node）。
+- **對應任務**：無（已關閉）。
 
 ## 沒有元件測試環境，React 互動邏輯只能靠瀏覽器手測
 
@@ -130,7 +152,8 @@
 - **現況（2026-07-23 更新，responsive1/2）**：斷點與佈局層的互動同樣沒有元件測試，只有 `useResponsive` 的 store 函式（`readBreakpoint`/`subscribeBreakpoint`，6 例，以 `vi.stubGlobal('window', …)` 假 MQL 驗證）與 `chipLabel.ts`（9 例）有涵蓋；`useLayoutEffect` 觸發 `ChartHandle.resize()`、`settingsOpen` 的斷點連動、圖例 chip 與參數小面板的互斥規則都靠手測。**另外發現 hidden pane 的凍結範圍比先前記錄的更廣**：`document.visibilityState === 'hidden'` 時整個 rendering steps 都不跑，因此 `requestAnimationFrame` 直接 timeout、`ResizeObserver` 回呼不觸發、**`matchMedia` 的 `change` 事件也不派送**（實測 `resize_window` 後 CSS media query 已套用、`matchMedia().matches` 已翻轉，但 React 收不到事件 → 佈局不切換），CSS transition 也不推進（側邊欄收合後 `getComputedStyle().width` 卡在起始值 260px，要暫時 `style.transition = 'none'` 才量得到終值 32px）。結論：**「拖曳視窗跨斷點」這類即時切換在沙盒內無法驗證**，只能「調整視窗尺寸 → 重新載入 → 量測初始渲染」，加上以程式化 `element.click()` 驅動互動後讀 DOM。
 - **現況（2026-07-23 更新，share4/5）**：`ShareMenu` 的分支邏輯（剪貼簿成功／不支援／被拒、Web Share 成功／`canShare` 回 false／使用者取消／被拒、截圖回 `null` 的失敗路徑）同樣沒有元件測試，純函式部分（`imageShare` 的能力偵測與 `screenshot` 的編碼路徑）有 20 例單元測試。這次是在 dev server 上用 `javascript_tool` 側錄 `clipboard.write`／`canShare`／`share`／`HTMLAnchorElement.prototype.click`／`URL.createObjectURL`，再對每條分支各點一次按鈕來驗證——涵蓋度夠，但每次回歸都得重搭一次側錄，成本高且無法自動重跑。
 - **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`、`ShareMenu` 的 fallback 分支（stub 掉 `imageShare` 的能力偵測即可，不需要真的 canvas）。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
-- **對應任務**：暫無（defer，下次動到元件互動邏輯時一併補）。
+- **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。已明確知道缺口在哪、也已把可測邏輯盡量抽成純函式（`searchStocks`/`lineSelection`/`chipLabel`/`readShareHash` 等都有單元測試涵蓋），目前選擇維持人工手測。本則**保留在清單上持續累積**——每次新增互動邏輯就更新「現況」段落，讓缺口規模保持可見，日後決定要補時有現成的優先案例清單。
+- **對應任務**：暫無（Skip）。
 
 ## 股票清單型別在 `scripts/` 與 `src/` 各自宣告一份
 
@@ -138,15 +161,17 @@
 - **狀況**：`Market` 與 `StockListEntry` 同時存在於 `web/scripts/stock-list/stockList.ts`（產出端）與 `web/src/lib/stock/types.ts`（消費端），內容相同但各自宣告。兩邊分屬 `tsconfig.node.json` 與 `tsconfig.app.json` 兩個編譯單元（`src/` 不能 import `scripts/`，否則 app 建置會把 Node 專用程式碼牽進來），所以不是單純忘了共用。
 - **影響**：`stock-list.json` 的欄位若增減（例如未來加產業別、市場再細分），要同步改兩處；漏改一處不會有型別錯誤——消費端只是拿不到新欄位，或反過來把已消失的欄位當成必填而在 `isStockListEntry()` 把整份清單過濾成空，症狀是「搜尋突然什麼都找不到」而非編譯失敗。
 - **建議**：真要共用的話，把型別抽到兩個 tsconfig 都納入的第三處（例如 `web/shared/stockList.types.ts`，純型別檔、無執行期程式碼），兩邊各自 `import type`。欄位穩定的現況下成本效益不高，可等實際要改欄位時再做。
-- **對應任務**：暫無（defer）。
+- **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。`stock-list.json` 的欄位目前穩定，共用要另開第三處純型別檔並同時調整兩個 tsconfig 的 include，成本效益不高。真的要增減欄位時再一併做——那也正是唯一會踩到這個坑的時機。
+- **對應任務**：暫無（Skip）。
 
-## 覆蓋式側邊欄的疊層依賴 lightweight-charts 內部寫死的 z-index
+## ~~覆蓋式側邊欄的疊層依賴 lightweight-charts 內部寫死的 z-index~~（決策：不處理，2026-07-23）
 
+- **決策：不處理（2026-07-23）**。接受與函式庫實作細節的耦合。這則無法真正「修好」，只能降低風險，而唯一徹底的解法（`layout: { panes: { enableResize: false } }` 關掉 pane 拖曳）會犧牲使用者調整量能 pane 高度的功能，已評估後決定保留該功能。數值已集中成 `--z-*` 變數且註解記下了函式庫的值，升級時能快速對照。此則關閉、不再追蹤。以下為原始紀錄。
 - **來源任務**：[sidebar1](task-pool/sidebar1.md)（人工驗證後改為覆蓋式版面，2026-07-23）
 - **狀況**：側邊欄改成絕對定位覆蓋在圖表之上（不擠壓版面、圖表不 resize），但圖表在側邊欄底下仍是滿版的，其內部元素會延伸到側邊欄下方。lightweight-charts 對這些元素寫死了 z-index：canvas 是 1/2、pane 分隔線拖曳把手是 49/50（`_addResizableHandle`，拖曳時另有一層 `position: fixed` 的 49 全螢幕背景）。我方必須把 `.sidebar` 設到 60、代號搜尋下拉設到 70 才不會被蓋住。這些數值已集中成 `web/src/index.css` 的 `--z-sidebar`/`--z-dropdown`（另有 `--z-chart-canvas`/`--z-chart-pane-handle` 兩個**僅供對照、不套用**的變數把函式庫的值寫進同一張順序表），但**順序關係本身仍依賴函式庫的實作細節**。
 - **影響**：實際踩過兩次坑——側邊欄用 `z-index: 1` 時整片被 canvas 蓋住、所有點擊失效；改成 10 後仍留一條「隱形帶」，點在 pane 分隔線的 y 座標上會誤觸量能 pane 高度拖曳（症狀是點側邊欄的清單項卻拖動了圖表）。這類 bug 的表徵與成因距離很遠，排查成本高；若日後升級 lightweight-charts 且它調整了內部 z-index（或新增更高層的元素，例如 tooltip/浮層），同樣的問題會再次出現，且沒有任何自動化測試會攔到。
 - **建議**：升級 lightweight-charts 時把「側邊欄各列（含 pane 分隔線所在 y）是否仍命中側邊欄元素」列為必測項（可用 `document.elementFromPoint` 快速檢查）。若不再需要調整量能 pane 高度，最徹底的解法是 `layout: { panes: { enableResize: false } }` 直接關掉 pane 拖曳，49/50 這層就不存在了（本次已評估，使用者決定保留拖曳功能）。
-- **對應任務**：暫無（defer，升級函式庫時複查）。
+- **對應任務**：無（已關閉；升級 lightweight-charts 時仍建議用 `document.elementFromPoint` 抽查側邊欄各列是否仍命中側邊欄元素）。
 
 ## ~~三來源成交量口徑不一致（Yahoo 略低）~~（決策：不處理，2026-07-22）
 
@@ -164,15 +189,17 @@
 - **狀況**：同一張 PNG 有兩條產生路徑——`canvasToPngBlob()`（`toBlob`，非同步）給剪貼簿用，`canvasToPngBlobSync()`（`toDataURL` + 自解 base64，同步）給 Web Share 用；`ChartHandle` 對應曝光 `takeScreenshot()` 與 `takeScreenshotSync()`。這是刻意的：`ClipboardItem` 吃得下 `Promise<Blob>`，所以剪貼簿可以用非同步版不擋主執行緒；`navigator.share()` 不吃 promise 且對 transient user activation 嚴格（iOS Safari 尤其），中間插一個 `await` 就可能被拒，只能全程同步。兩者已實測產物一致（同尺寸、同 byte 數、同像素統計，見 [`docs/share.md`](../docs/share.md)）。
 - **影響**：目前無行為差異，但截圖選項或後處理（例如日後加浮水印、加標題列、改底色策略）要改時得記得改兩處；漏改一處會造成「複製出來的圖」與「分享出去的圖」不一致，而且這種不一致只在其中一條路徑上看得到，不容易發現。
 - **建議**：兩個方向。(1) 若日後實測確認 Safari 對「`await toBlob` 後再 `share()`」其實可接受，就砍掉同步版統一走非同步。(2) 若要保留兩條，把差異縮到只剩最後一步編碼——目前 `takeChartScreenshotCanvas()` 已是共用的前半段（截圖 + 補底色），後處理一律加在那裡，兩個 `canvasToPngBlob*()` 維持「只做編碼」的單一職責即可。目前已符合 (2) 的結構，維護時守住這條界線就好。
-- **對應任務**：暫無（defer，結構已隔離，動到截圖後處理時複查）。
+- **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。採方向 (2)——結構本身已經是對的，差異縮到只剩最後一步編碼。方向 (1)（統一走非同步）需要真機確認 iOS Safari 的 user activation 判定，而真機驗證已決定不做，風險過高。**維護守則**：任何截圖後處理（浮水印、標題列、底色策略）一律加在共用的 `takeChartScreenshotCanvas()`，不要加進兩個 `canvasToPngBlob*()`。
+- **對應任務**：暫無（Skip）。
 
-## Web Share 只在 stub 下驗證，真機（iOS Safari／Android Chrome）未測
+## ~~Web Share 只在 stub 下驗證，真機（iOS Safari／Android Chrome）未測~~（決策：不處理，2026-07-23）
 
+- **決策：不處理（2026-07-23）**。真機驗證需要實體裝置、無法在開發流程內自動化，接受 stub 對**分支邏輯**的覆蓋度。所有失敗路徑最終都會退回下載（`AbortError` 除外，那是使用者主動取消），最壞情況是行動裝置拿到下載檔而非系統分享面板，功能不會完全失效。此則關閉、不再追蹤。以下為原始紀錄。
 - **來源任務**：[share5](task-pool/share5.md)（2026-07-23）
 - **狀況**：沙盒的 Chromium 原生**沒有** `navigator.share`／`navigator.canShare`，因此「分享成功」「使用者取消（`AbortError`）」「被拒（`NotAllowedError`）」「`canShare` 回 false」四條分支都是用 stub 模擬驗證的（真實驗到的只有「完全沒有 Web Share → 退回下載」那條）。share5 驗收方式 1（真機叫出系統分享面板、分享到 LINE）尚未執行。
 - **影響**：stub 驗的是**我們的分支邏輯**，驗不到平台行為——最可能出問題的兩點都在 stub 之外：iOS Safari 對 user activation 的實際判定（同步截圖約 82 ms 是否仍在可接受範圍）、以及各家 App 對 `image/png` 檔案分享的支援程度。若真機失敗，症狀會是「按了沒反應」或直接跳下載，使用者不會知道原因。
 - **建議**：真機補測 iOS Safari 與 Android Chrome 各一次，重點看：分享面板是否叫得出來、LINE 是否收得到圖、按取消後是否**沒有**多出下載檔。若 iOS 因 activation 被拒，可考慮改成「先在 idle 時預先截好一張放著、click 時直接用」的預熱策略，或退而求其次讓行動裝置也走下載。
-- **對應任務**：暫無（需實體裝置，defer 至有機會實測時）。
+- **對應任務**：無（已關閉）。
 
 ## 斷點 1024px 在 JS 與 CSS 各寫一份，且邊界重疊（正好 1024px 時兩邊同時成立）
 
@@ -180,23 +207,26 @@
 - **狀況**：`hooks/useResponsive.ts` 用 `(min-width: 1024px)` 判定桌面版；`web/src/index.css` 既有的字級調整用 `@media (max-width: 1024px)` 判定行動版。兩者都寫死 1024，但**邊界方向相反且都含等號**——視窗**正好 1024px** 時，JS 認定 `desktop`（跑桌面佈局、完整工具列），CSS 卻同時套用行動版字級（`font-size: 16px`、`h1`/`h2` 縮小）。CSS media query 無法讀 JS 常數（`DESKTOP_MIN_WIDTH`），反之亦然，目前沒有共用來源。
 - **影響**：只有 1024px 這一個寬度會出現「桌面佈局配行動字級」的混搭，視覺上只是字略小，不影響功能；實測 1024×768 佈局判定與圖表尺寸都正確。真正的風險是日後調整斷點時**只改一邊**——JS 改成 1280 而 CSS 留在 1024，會出現一段「桌面佈局但字級已縮小」的區間，而且沒有任何測試會攔到。
 - **建議**：兩個方向。(1) 把 CSS 那側改成 `@media (max-width: 1023.98px)`，讓邊界互斥（成本最低，先解掉重疊）。(2) 若日後斷點會再調整，改由 JS 單一來源驅動——`useResponsive` 已經把斷點掛成 `.app-desktop`/`.app-mobile` class，字級規則可改寫成 `.app-mobile { font-size: 16px }` 之類的 class 選擇器，CSS 就不必再有自己的 media query。
-- **對應任務**：暫無（defer，下次調整斷點時一併處理）。
+- **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。現況影響僅止於 1024px 這一個寬度的字級略小，不影響功能；真正的風險（改斷點只改一邊）只有在真的要調斷點時才會實現，屆時一併處理即可。**若日後調整斷點，記得同時改 `useResponsive.ts` 的 `DESKTOP_MEDIA_QUERY` 與 `index.css` 的三處 `@media (max-width: 1024px)`。**
+- **對應任務**：暫無（Skip）。
 
-## 指標圖例的桌面版讓位靠 CSS class 與側邊欄寬度硬耦合
+## ~~指標圖例的桌面版讓位靠 CSS class 與側邊欄寬度硬耦合~~（決策：不處理，2026-07-23）
 
+- **決策：不處理（2026-07-23）**。接受現行 CSS 耦合。側邊欄寬度維持展開／收合兩態就不會失準，而「改成可拖曳調寬」或「行動版改抽屜」都不在規劃中；真的要做時，改由 `Sidebar` 寫 `--settings-inset` 的方案本身就是那次改動的一部分，不需要預先做。此則關閉、不再追蹤。以下為原始紀錄。
 - **來源任務**：[responsive2](task-pool/responsive2.md)（2026-07-23）
 - **狀況**：`.indicator-legend` 覆蓋在圖表左上角，桌面版必須往右讓開側邊欄才不會被蓋住。做法是 `App.tsx` 依 `settingsOpen` 在 `.app` 掛 `app-settings-open` class，`IndicatorLegend.css` 用 `.app-desktop .indicator-legend` / `.app-desktop.app-settings-open .indicator-legend` 兩條規則在 `calc(var(--sidebar-collapsed-width) + 8px)` 與 `calc(var(--sidebar-width) + 8px)` 之間切換 `padding-left`。寬度變數已提到 `index.css` 的 `:root` 與 `Sidebar.css` 共用，但「圖例要知道側邊欄現在多寬」這件事本身仍是跨元件的隱性耦合。
 - **影響**：目前側邊欄寬度固定兩態，運作正常（實測展開 268px／收合 40px，chip 起點分別為 x=268.6／40.6）。但若日後側邊欄改成可拖曳調寬、或行動版改用側邊抽屜，這兩條規則會靜默失準——症狀是前幾個 chip 被側邊欄蓋住、點不到，不會有任何錯誤訊息。另外 `.app-settings-open` 這個 class 目前只有圖例在用，很容易在重構時被誤刪。
 - **建議**：若側邊欄寬度變成動態的，改由 `Sidebar` 把目前寬度寫進 `.app` 的 CSS 變數（例如 `--settings-inset`），圖例只讀那個變數，耦合方向就從「圖例猜側邊欄」變成「側邊欄宣告自己佔多寬」。在寬度維持兩態的現況下不值得先做。
-- **對應任務**：暫無（defer，側邊欄寬度改為動態時一併處理）。
+- **對應任務**：無（已關閉；`.app-settings-open` 這個 class 目前只有 `IndicatorLegend.css` 在用，重構時勿誤刪）。
 
-## 設定面板與參數小面板缺鍵盤關閉與焦點管理
+## ~~設定面板與參數小面板缺鍵盤關閉與焦點管理~~（決策：不處理，2026-07-23）
 
+- **決策：不處理（2026-07-23）**。目標使用者以滑鼠與觸控為主，兩者皆不受影響；面板刻意設計為非模態（無遮罩、開著仍看得到並操作得到圖表），而完整的 modal 焦點處理與這個設計相衝突。此則關閉、不再追蹤。以下為原始紀錄。
 - **來源任務**：[responsive2](task-pool/responsive2.md)（2026-07-23）
 - **狀況**：`OverlayPanel`（行動版設定）與 `IndicatorLegend` 的參數小面板都刻意做成**非模態**（無遮罩、不鎖捲動、面板開著仍看得到並操作得到圖表），但也因此沒有做任何焦點處理：開啟時焦點不會移進面板、關閉後不會還原到觸發按鈕、Tab 可以跑到底下被覆蓋的圖表工具列、**沒有 Esc 關閉**。目前只能點面板上的 `✕`（或再點一次觸發鈕／同一個 chip）關閉。
 - **影響**：滑鼠與觸控使用者不受影響；純鍵盤／螢幕閱讀器使用者在行動版設定面板開啟後，Tab 順序會與視覺順序脫節（面板在 DOM 中位於 header 之後、圖表之前，實際上覆蓋全區），且沒有慣用的 Esc 逃生路徑。
 - **建議**：成本很低的兩步：(1) 兩個面板各加一個 `keydown` 監聽，`Escape` 時呼叫 `onClose`；(2) 開啟時把焦點移到面板標題（`tabIndex={-1}` + `focus()`），關閉時還原到觸發按鈕。真要做完整 modal（focus trap + `aria-modal`）則與「非模態、要能同時看圖」的設計相衝突，不建議。
-- **對應任務**：暫無（defer，下次動到面板互動時一併補）。
+- **對應任務**：無（已關閉）。
 
 ## 分享連結的線條還原綁在「第一批 bars 到位」，首查失敗後可能把線畫到別支股票上
 
@@ -204,15 +234,17 @@
 - **狀況**：`App.tsx` 把解出的 `lines` 放進 `pendingLinesRef`，由一個依賴 `[bars]` 的 effect 在 `bars.length > 0` 時一次補上（延後是必要的：`ChartContainer` 在 `stockNo` 變動含首次掛載時會 `clearAll()`，太早加會被清掉）。但這個 pending **沒有綁定「當初要還原的是哪支股票」**：若還原當下的查詢失敗（`error` 分支不 render `ChartContainer`，`chartRef` 為 null），pending 會一直留著，使用者接著改查另一支股票、資料成功到位時，這批線就會被畫到**新的股票**上。
 - **影響**：需要「開分享連結 → 第一次查詢失敗 → 不重新整理直接改查別支」這串操作才會觸發，日常不易遇到；症狀是線條出現在不相干的股票上（座標仍是原本的 time/price，位置多半明顯不合理）。另一個較小的副作用：pending 未清空期間 hash 同步被擋住，網址不會跟著使用者的操作更新。
 - **建議**：把 pending 改成 `{ stockNo, lines }`，還原 effect 先比對 `stockNo` 相符才補線、不符就直接丟棄 pending（並解除 hash 同步的封鎖）。改動集中在 `App.tsx` 的兩個 effect，成本很低，等有元件測試環境時可一併補上回歸測試。
-- **對應任務**：暫無（defer，觸發條件狹窄；下次動到 `App.tsx` 還原流程時一併處理）。
+- **決策（2026-07-23）**：**實作**。這是本次盤點中唯一確定存在的功能性 bug，雖然觸發路徑狹窄，但修法明確、改動集中在 `App.tsx` 兩個 effect、成本很低，沒有理由留著。
+- **對應任務**：[share6](task-pool/share6.md)。
 
-## 觸控畫線手勢只在 fake `TouchEvent` 下驗證，真機（iOS Safari／Android Chrome）未測
+## ~~觸控畫線手勢只在 fake `TouchEvent` 下驗證，真機（iOS Safari／Android Chrome）未測~~（決策：不處理，2026-07-23）
 
+- **決策：不處理（2026-07-23）**。與上面的 Web Share 真機驗證同一個理由——需要實體裝置、無法納入開發流程，接受 fake event 對**分支邏輯**的覆蓋度。此則關閉、不再追蹤。以下為原始紀錄。
 - **來源任務**：[responsive3](task-pool/responsive3.md)（2026-07-23）
 - **狀況**：沙盒的 Browser pane 不合成畫面（`document.visibilityState === 'hidden'`），既截不了圖也產不出真實的觸控事件序列（`computer` 的 drag 動作在 canvas 上一律 timeout，drawing1 起就是如此）。responsive3 的多指防呆因此改用 `drawingController.test.ts` 的 fake `TouchEvent`（只有 `touches.length` + 第一指座標 + `preventDefault`）覆蓋四條路徑，CSS 面（`touch-action: none`、44px 觸控目標）則以 `javascript_tool` 量測 computed style 與 `getBoundingClientRect()`。responsive3 的驗收條件 1–3（真機單指平移／雙指縮放、畫線模式單指拖曳不誤觸平移、模式提示是否夠清楚）全部尚未執行。
 - **影響**：fake event 驗的是**我們的分支邏輯**，驗不到平台行為——驗不到的部分包括：iOS Safari 對 `touch-action: none` 與 lightweight-charts 內建 tracking mode 的實際互動、第二指落下時真實裝置送出的事件順序（`touchstart` 與 `touchmove` 的先後、是否夾帶 `touchcancel`）、以及 44px 在實際指腹下是否真的夠用。若真機行為與假設不符，症狀會是「畫線畫到一半突然變成平移」或「線莫名歪掉」這類難以從程式碼看出的問題。
 - **建議**：真機各測一次，重點三項：(1) 非畫線模式單指平移＋雙指縮放仍正常；(2) 畫線模式下故意在拖曳中補第二指，確認**不會**留下一條歪線；(3) 連續畫 3 條線確認 drawing5 修掉的座標偏移沒有回歸。若第二指的事件順序與假設不同，`isMultiTouch()` 的攔截點可能要往 `touchcancel` 補一份。
-- **對應任務**：暫無（需實體裝置，defer 至有機會實測時；與 [share5 的 Web Share 真機驗證](#web-share-只在-stub-下驗證真機ios-safariandroid-chrome未測)可同一次測完）。
+- **對應任務**：無（已關閉）。
 
 ## 44px 觸控目標散在三個 CSS 檔，靠後代選擇器涵蓋，新增行動版 UI 時容易漏掉
 
@@ -220,4 +252,5 @@
 - **狀況**：行動版的 ≥44px 觸控目標由三條後代選擇器提供——`.app-header-mobile`（`AppLayout.css`）、`.overlay-panel-body`（`OverlayPanel.css`）、`.app-mobile .indicator-legend`（`IndicatorLegend.css`）。選用後代選擇器是刻意的（沿用既有的斷點 class，不必再抄一份 1024px），但代價是「哪些容器有 44px 保護」變成一份沒有寫在任何一處的隱性清單，且每條規則都得各自重複 `box-sizing: border-box`、`input:not([type='radio'])` 排除、`button` 的 `min-width` 這幾個細節。
 - **影響**：目前三個容器已涵蓋行動版所有可點元素（實測 390×844 逐一量測通過）。但日後若新增一個不在這三個容器內的行動版 UI（例如放在圖表上的浮動按鈕、或新的覆蓋層），它不會自動獲得 44px，而且**不會有任何錯誤或警告**，只能靠人工量測發現。
 - **建議**：抽一個共用的 `.touch-target` utility class（或 CSS `@mixin` 等價物：在 `index.css` 定義一組宣告，各處 `@extend`／複製一行 class 名）放進 `index.css`，讓「這是觸控目標」變成明確標記而非容器繼承。現有三條規則可保留為 fallback。等到行動版真的多出第四個容器時再做，現在抽會是為單一使用情境過度設計。
-- **對應任務**：暫無（defer）。
+- **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。現在抽 utility class 是為單一使用情境過度設計。**新增行動版 UI 時的檢查點**：若新元件不在 `.app-header-mobile`／`.overlay-panel-body`／`.app-mobile .indicator-legend` 三個容器之內，需自行確保 ≥44px（此時就是抽 `.touch-target` 的時機）。
+- **對應任務**：暫無（Skip）。
