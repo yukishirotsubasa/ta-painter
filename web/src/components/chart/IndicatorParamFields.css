@@ -1,0 +1,30 @@
+/* 側邊欄指標清單與行動版參數 bottom sheet 共用的欄位樣式。 */
+.indicator-param {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.indicator-param input,
+.indicator-param select {
+  width: 56px;
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+
+.indicator-param select {
+  width: auto;
+}
+
+.indicator-param input.indicator-param-color {
+  width: 28px;
+  height: 22px;
+  padding: 1px;
+  cursor: pointer;
+}

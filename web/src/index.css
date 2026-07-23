@@ -19,8 +19,13 @@
    */
   --z-chart-canvas: 2; /* 參考用，勿套用 */
   --z-chart-pane-handle: 50; /* 參考用，勿套用 */
-  --z-sidebar: 60; /* 覆蓋式側邊欄，必須高於 pane 把手才點得到 */
+  --z-chips: 55; /* 指標圖例列與參數小面板，高於 pane 把手、低於側邊欄與設定面板 */
+  --z-sidebar: 60; /* 覆蓋式側邊欄與行動版設定面板，必須高於 pane 把手才點得到 */
   --z-dropdown: 70; /* 代號搜尋下拉，必須高於側邊欄 */
+
+  /* 桌面版側邊欄寬度；圖例列要往右讓開這段距離才不會被側邊欄蓋住，故放在共用層。 */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 32px;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -59,6 +64,18 @@
   #social .button-icon {
     filter: invert(1) brightness(2);
   }
+}
+
+/* 視覺上隱藏、但保留在無障礙樹：行動版精簡工具列用來藏掉標題與欄位說明文字。 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
 }
 
 #root {

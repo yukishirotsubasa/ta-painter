@@ -1,6 +1,6 @@
 # 技術指標架構（`web/src/lib/chart/indicators/`、`components/chart/IndicatorPanel.tsx`）
 
-> 本文件記錄**已實作**的指標可擴充架構與目前已完成的指標（MA、布林通道、MACD）。整體規劃見 `project-planning/design.md`。
+> 本文件記錄**已實作**的指標可擴充架構與目前已完成的指標（MA、布林通道、MACD）。指標**有兩個編輯入口**：設定面板內的完整清單（`IndicatorPanel`，可新增／移除／改參數）與圖表上方的圖例 chip（`IndicatorLegend`，點開單一指標的參數小面板，responsive2），兩者共用同一份參數欄位元件。整體規劃見 `project-planning/design.md`。
 
 ## 指標定義介面（`types.ts`）
 
@@ -129,7 +129,18 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 
 - Props：`instances`（目前所有 `IndicatorInstance`）、`onAdd(definitionId)`、`onRemove(instanceId)`、`onParamsChange(instanceId, params)`。
 - 上方列出 `listIndicators()` 回傳的每個指標定義的「+ 新增」按鈕；下方列出每個 `instance`，依 `definition.paramsSchema` 動態產生參數輸入元件，並有一個移除按鈕。
+- 參數欄位本身抽成 `components/chart/IndicatorParamFields.tsx`（responsive2），供**兩個入口共用**：側邊欄／設定面板的 `IndicatorPanel`，以及圖例 chip 展開的參數小面板。Props 為 `{ definition, params, onChange(params), idPrefix }`——`idPrefix` 是必要的，同一畫面可能同時存在兩處相同欄位（`indicator-panel-{instanceId}` vs `legend-{instanceId}`），id 撞了會讓 `<label htmlFor>` 綁到錯的 input。樣式在 `IndicatorParamFields.css`（`.indicator-param`）。
 - 每個參數的輸入元件由 `paramInput.ts` 的純函式 `resolveParamInput(schema, params)` 決定要渲染哪一種：`number` → `<input type="number">`、`enum` → `<select>`（選項來自 `schema.options`）、`color` → `<input type="color">`。輸入變動時以 `coerceParamValue(schema, raw)` 依型別把原始字串回寫成正確型別（`number` 型別化為數字，`enum`/`color` 保留 string）。渲染決策與型別轉換抽成純函式（不觸 DOM），以 `paramInput.test.ts` 用含 number/enum/color 三型別的測試 schema 單元驗證（本專案無 jsdom 測試環境）。
+
+## 圖例 chip（`components/chart/IndicatorLegend.tsx` + `IndicatorChips.tsx`，responsive2）
+
+覆蓋在圖表左上角的已啟用指標圖例，桌面／行動共用：chip 橫向可捲，點擊在正下方展開該指標的參數小面板（`IndicatorParamFields` + 移除鈕）。chip 文字與色點由純函式 `lib/chart/indicators/chipLabel.ts` 產生：
+
+- `indicatorShortLabel('移動平均線（MA）') === 'MA'`（取全形括號內；無括號用原標籤）
+- `indicatorChipLabel(definition, params)` → `MA(60)`／`MACD(12,26,9)`／`Bollinger Bands(20,2)`：簡稱 + **數值參數**，缺值時取 schema `default`，`enum`/`color` 不入 chip
+- `indicatorChipColor(definition, params)` → 第一個 `type: 'color'` 參數的目前值，無顏色參數則 `null`（不畫色點）
+
+版面、疊層與互斥規則見 [`responsive.md`](responsive.md)。
 - `types.ts` 另提供兩個讀參數 helper：`numberParam(params, key, fallback)` 讀數值型參數並容忍以 string 儲存的數字（分享還原等情境），缺值/空字串/非數字時回退 `fallback`；`stringParam(params, key, fallback)` 讀字串型（enum/color）參數，非字串或空字串時回退 `fallback`。`ma.ts`/`bollinger.ts`/`macd.ts` 的 `compute()` 用 `numberParam` 讀週期等數值參數；`ma.ts` 的 `mount()` 用 `stringParam` 讀 `source`/`color`，`bollinger.ts`/`macd.ts` 的 `mount()` 亦用 `stringParam` 讀各線色參數。
 
 實際狀態管理與 chart 掛載邏輯在別處：

@@ -1,0 +1,52 @@
+/* 佔滿 `.app` grid 的 row 2（與圖表同一格）：覆蓋在圖表上，但不改變圖表容器尺寸。 */
+.overlay-panel {
+  grid-row: 2;
+  grid-column: 1;
+  z-index: var(--z-sidebar);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  box-sizing: border-box;
+  text-align: left;
+  background: var(--bg);
+}
+
+.overlay-panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.overlay-panel-title {
+  font-size: 15px;
+  line-height: 1.2;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.overlay-panel-close {
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  /* 觸控目標放大到 40px 見方，右側留白靠負 margin 抵銷。 */
+  padding: 10px;
+  margin: -10px -6px -10px 0;
+  cursor: pointer;
+}
+
+.overlay-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 12px;
+  /* iPhone 底部 home indicator 區域不要蓋住最後一列控制項。 */
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}

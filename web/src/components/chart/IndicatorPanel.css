@@ -48,34 +48,7 @@
   color: var(--text-h);
 }
 
-.indicator-panel-param {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text);
-}
-
-.indicator-panel-param input,
-.indicator-panel-param select {
-  width: 56px;
-  font: inherit;
-  color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 2px 4px;
-}
-
-.indicator-panel-param select {
-  width: auto;
-}
-
-.indicator-panel-param input.indicator-panel-color {
-  width: 28px;
-  height: 22px;
-  padding: 1px;
-  cursor: pointer;
-}
+/* 參數欄位本身的樣式在 IndicatorParamFields.css（與行動版參數面板共用）。 */
 
 .indicator-panel-remove {
   font: inherit;

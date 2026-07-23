@@ -5,36 +5,23 @@ body,
   margin: 0;
 }
 
+/*
+ * 兩列 grid：row 1 頁首（高度依內容）、row 2 圖表。設定面板（側邊欄／底部面板）
+ * 也放在 row 2 的同一格，靠 z-index 覆蓋在圖表上，因此圖表尺寸不受收合影響。
+ * 頁首與設定面板由 Desktop/MobileLayout 產生，圖表則固定掛在這裡不參與切換。
+ */
 .app {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: 1fr;
   height: 100vh;
+  height: 100dvh; /* 行動瀏覽器網址列展開/收起時不溢出 */
   box-sizing: border-box;
 }
 
-.app-header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.app-header h1 {
-  font-size: 18px;
-  margin: 0;
-}
-
-/* 圖表始終佔滿整個區域，側邊欄以絕對定位覆蓋在左側（見 Sidebar.css）。 */
-.app-body {
-  position: relative;
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
 .app-main {
-  flex: 1 1 auto;
+  grid-row: 2;
+  grid-column: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;

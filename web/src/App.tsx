@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChartContainer, type ChartHandle } from './components/chart/ChartContainer';
 import { ChartToolbar } from './components/chart/ChartToolbar';
 import { DrawingToolbar } from './components/chart/DrawingToolbar';
+import { IndicatorLegend } from './components/chart/IndicatorLegend';
 import { IndicatorPanel } from './components/chart/IndicatorPanel';
+import { DesktopLayout } from './components/layout/DesktopLayout';
+import { MobileLayout } from './components/layout/MobileLayout';
 import { ShareMenu } from './components/share/ShareMenu';
 import { DataSourcePanel } from './components/sidebar/DataSourcePanel';
 import { DrawingListPanel } from './components/sidebar/DrawingListPanel';
-import { Sidebar } from './components/sidebar/Sidebar';
 import { SidebarSection } from './components/sidebar/SidebarSection';
+import { useResponsive } from './hooks/useResponsive';
 import { DEFAULT_DRAWING_LINE_COLOR } from './lib/chart/colors';
 import type { DrawnLine } from './lib/chart/drawing/drawingController';
 import { keepSelection, selectionAfterCollapse, toggleSelection } from './lib/chart/drawing/lineSelection';
@@ -54,6 +57,8 @@ function lastMonthsRange(months: number): DateRange {
 }
 
 function App() {
+  const breakpoint = useResponsive();
+
   // 只在掛載當下讀一次 hash：之後 hash 由本 App 自己 replaceState 維護，不需要（也不該）反覆回讀。
   const [initialShare] = useState(() => readShareHash(window.location.hash));
   const restored = initialShare.status === 'ok' ? initialShare.state : null;
@@ -76,7 +81,8 @@ function App() {
   );
   const [drawingMode, setDrawingMode] = useState(false);
   const [drawingColor, setDrawingColor] = useState(DEFAULT_DRAWING_LINE_COLOR);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // 設定面板：桌面版是側邊欄（預設展開），行動版是 bottom sheet（預設收合，見下方斷點 effect）。
+  const [settingsOpen, setSettingsOpen] = useState(() => breakpoint === 'desktop');
   const [indicatorSectionCollapsed, setIndicatorSectionCollapsed] = useState(false);
   const [drawingSectionCollapsed, setDrawingSectionCollapsed] = useState(false);
   const [lines, setLines] = useState<DrawnLine[]>([]);
@@ -94,10 +100,25 @@ function App() {
     setSelectedLineId((prev) => keepSelection(prev, next));
   }, []);
 
-  // 折疊畫線清單或整個側邊欄時取消選取，圖上高亮同時消失（sidebar3）。
+  /*
+   * 佈局切換只換掉 chrome（頁首高度、設定面板位置），圖表元件不重建，
+   * 但容器高度會變 → 這裡在 DOM 更新後、瀏覽器繪製前主動 resize。
+   * 只靠 ChartContainer 的 ResizeObserver 會晚一幀，中間先閃一次舊尺寸。
+   */
+  useLayoutEffect(() => {
+    chartRef.current?.resize();
+  }, [breakpoint]);
+
+  // 切到行動版就收起設定面板（responsive2 的「預設只顯示圖表+精簡工具列」）；
+  // 反向不自動展開，桌面版側邊欄維持使用者當下的選擇。
   useEffect(() => {
-    setSelectedLineId((prev) => selectionAfterCollapse(prev, sidebarCollapsed, drawingSectionCollapsed));
-  }, [sidebarCollapsed, drawingSectionCollapsed]);
+    if (breakpoint === 'mobile') setSettingsOpen(false);
+  }, [breakpoint]);
+
+  // 折疊畫線清單或收起整個設定面板時取消選取，圖上高亮同時消失（sidebar3）。
+  useEffect(() => {
+    setSelectedLineId((prev) => selectionAfterCollapse(prev, !settingsOpen, drawingSectionCollapsed));
+  }, [settingsOpen, drawingSectionCollapsed]);
 
   // 分享連結的線條還原（share2）：等第一批資料進圖後一次補上，之後這個 ref 就永遠是空的。
   useEffect(() => {
@@ -199,101 +220,136 @@ function App() {
     };
   }, [stockNo, dataSource, routingMarket, range]);
 
+  // 行動版工具列精簡（responsive2）：標題與欄位說明只留給輔助技術，按鈕文字縮短。
+  const compact = breakpoint === 'mobile';
+
+  const header = (
+    <>
+      <h1 className={compact ? 'sr-only' : undefined}>TA Painter</h1>
+      <ChartToolbar
+        stockNo={stockNo}
+        loading={progress !== null}
+        compact={compact}
+        onSubmit={(code) => {
+          setShareNotice(null);
+          setSymbol((prev) => applySubmittedCode(prev, code));
+        }}
+      />
+      <DrawingToolbar
+        drawingMode={drawingMode}
+        onDrawingModeChange={setDrawingMode}
+        color={drawingColor}
+        onColorChange={setDrawingColor}
+        compact={compact}
+      />
+      <ShareMenu
+        takeScreenshot={() => chartRef.current?.takeScreenshot() ?? Promise.resolve(null)}
+        takeScreenshotSync={() => chartRef.current?.takeScreenshotSync() ?? null}
+        fileName={screenshotFileName(stockNo)}
+        shareTitle={`TA Painter ${stockNo}`}
+        compact={compact}
+      />
+      {progress && (
+        <div className="progress" role="progressbar" aria-valuenow={progress.loaded} aria-valuemax={progress.total}>
+          <div className="progress-bar" style={{ width: `${(progress.loaded / progress.total) * 100}%` }} />
+          <span className="progress-label">
+            {progress.message ?? '載入中'}（{progress.loaded}/{progress.total}）
+          </span>
+        </div>
+      )}
+      {shareNotice && (
+        <p className="app-notice" role="status">
+          {shareNotice}
+        </p>
+      )}
+      {notice && (
+        <p className="app-notice" role="status">
+          {notice}
+        </p>
+      )}
+    </>
+  );
+
+  // 設定區塊只給內容，外層容器（桌面側邊欄／行動 bottom sheet）由各佈局套上。
+  const settings = (
+    <>
+      <DataSourcePanel
+        value={dataSource}
+        onChange={(next) => {
+          setShareNotice(null);
+          setDataSource(next);
+        }}
+        market={symbol.market}
+      />
+      <SidebarSection title="指標" collapsed={indicatorSectionCollapsed} onCollapsedChange={setIndicatorSectionCollapsed}>
+        <IndicatorPanel
+          instances={indicators}
+          onAdd={addIndicator}
+          onRemove={removeIndicator}
+          onParamsChange={updateIndicatorParams}
+        />
+      </SidebarSection>
+      <SidebarSection
+        title={`畫線（${lines.length}）`}
+        collapsed={drawingSectionCollapsed}
+        onCollapsedChange={setDrawingSectionCollapsed}
+      >
+        <DrawingListPanel
+          lines={lines}
+          selectedId={selectedLineId}
+          onSelect={(id) => setSelectedLineId((prev) => toggleSelection(prev, id))}
+          onDelete={(id) => chartRef.current?.deleteLine(id)}
+        />
+      </SidebarSection>
+    </>
+  );
+
+  // app-settings-open 供圖例列讓開側邊欄寬度用（見 IndicatorLegend.css）。
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>TA Painter</h1>
-        <ChartToolbar
-          stockNo={stockNo}
-          loading={progress !== null}
-          onSubmit={(code) => {
-            setShareNotice(null);
-            setSymbol((prev) => applySubmittedCode(prev, code));
-          }}
+    <div className={`app app-${breakpoint}${settingsOpen ? ' app-settings-open' : ''}`}>
+      {breakpoint === 'desktop' ? (
+        <DesktopLayout
+          header={header}
+          settings={settings}
+          settingsOpen={settingsOpen}
+          onSettingsOpenChange={setSettingsOpen}
         />
-        <DrawingToolbar
-          drawingMode={drawingMode}
-          onDrawingModeChange={setDrawingMode}
-          color={drawingColor}
-          onColorChange={setDrawingColor}
+      ) : (
+        <MobileLayout
+          header={header}
+          settings={settings}
+          settingsOpen={settingsOpen}
+          onSettingsOpenChange={setSettingsOpen}
         />
-        <ShareMenu
-          takeScreenshot={() => chartRef.current?.takeScreenshot() ?? Promise.resolve(null)}
-          takeScreenshotSync={() => chartRef.current?.takeScreenshotSync() ?? null}
-          fileName={screenshotFileName(stockNo)}
-          shareTitle={`TA Painter ${stockNo}`}
-        />
-        {progress && (
-          <div className="progress" role="progressbar" aria-valuenow={progress.loaded} aria-valuemax={progress.total}>
-            <div className="progress-bar" style={{ width: `${(progress.loaded / progress.total) * 100}%` }} />
-            <span className="progress-label">
-              {progress.message ?? '載入中'}（{progress.loaded}/{progress.total}）
-            </span>
-          </div>
-        )}
-        {shareNotice && (
-          <p className="app-notice" role="status">
-            {shareNotice}
-          </p>
-        )}
-        {notice && (
-          <p className="app-notice" role="status">
-            {notice}
-          </p>
-        )}
-      </header>
-      <div className="app-body">
-        <Sidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed}>
-          <DataSourcePanel
-            value={dataSource}
-            onChange={(next) => {
-              setShareNotice(null);
-              setDataSource(next);
-            }}
-            market={symbol.market}
+      )}
+      {/* 圖例與參數小面板兩個斷點共用，和圖表一樣不參與佈局切換。 */}
+      <IndicatorLegend
+        instances={indicators}
+        onParamsChange={updateIndicatorParams}
+        onRemove={removeIndicator}
+        settingsOpen={settingsOpen}
+      />
+      {/*
+       * 圖表刻意留在佈局切換之外：`DesktopLayout`／`MobileLayout` 只產生 chrome，
+       * `<main>` 永遠是 `.app` 的同一個子節點，跨斷點時 React 不會卸載 ChartContainer
+       * （否則 pan/zoom、手繪線、已載入資料都會跟著圖表實例一起重建）。
+       */}
+      <main className="app-main">
+        {error ? (
+          <p className="app-error">{error}</p>
+        ) : (
+          <ChartContainer
+            ref={chartRef}
+            data={bars}
+            indicators={indicators}
+            drawingMode={drawingMode}
+            drawingColor={drawingColor}
+            stockNo={stockNo}
+            onLinesChange={handleLinesChange}
+            highlightedLineId={selectedLineId}
           />
-          <SidebarSection
-            title="指標"
-            collapsed={indicatorSectionCollapsed}
-            onCollapsedChange={setIndicatorSectionCollapsed}
-          >
-            <IndicatorPanel
-              instances={indicators}
-              onAdd={addIndicator}
-              onRemove={removeIndicator}
-              onParamsChange={updateIndicatorParams}
-            />
-          </SidebarSection>
-          <SidebarSection
-            title={`畫線（${lines.length}）`}
-            collapsed={drawingSectionCollapsed}
-            onCollapsedChange={setDrawingSectionCollapsed}
-          >
-            <DrawingListPanel
-              lines={lines}
-              selectedId={selectedLineId}
-              onSelect={(id) => setSelectedLineId((prev) => toggleSelection(prev, id))}
-              onDelete={(id) => chartRef.current?.deleteLine(id)}
-            />
-          </SidebarSection>
-        </Sidebar>
-        <main className="app-main">
-          {error ? (
-            <p className="app-error">{error}</p>
-          ) : (
-            <ChartContainer
-              ref={chartRef}
-              data={bars}
-              indicators={indicators}
-              drawingMode={drawingMode}
-              drawingColor={drawingColor}
-              stockNo={stockNo}
-              onLinesChange={handleLinesChange}
-              highlightedLineId={selectedLineId}
-            />
-          )}
-        </main>
-      </div>
+        )}
+      </main>
     </div>
   );
 }

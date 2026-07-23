@@ -1,14 +1,14 @@
 /*
  * 側邊欄直接覆蓋在圖表之上（不擠壓版面、圖表不重新 resize）：
  * 因此需要不透明背景，收合後被蓋住的那段 K 線就會重新露出來。
+ * 只有桌面版用側邊欄（`.app` grid 的 row 2，與 `.app-main` 同一格重疊，見 App.css）；
+ * 行動平板版的設定改用覆蓋整個圖表區的 `OverlayPanel`。
+ * 寬度變數定義在 index.css：圖例列要依側邊欄寬度讓開，兩邊得共用同一組數字。
  */
 .sidebar {
-  --sidebar-width: 260px;
-
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
+  grid-row: 2;
+  grid-column: 1;
+  justify-self: start;
   /* 圖表在側邊欄底下仍是滿版的，其內部元素會延伸到側邊欄下方；疊層順序見 index.css。 */
   z-index: var(--z-sidebar);
   display: flex;
@@ -23,7 +23,7 @@
 }
 
 .sidebar-collapsed {
-  width: 32px;
+  width: var(--sidebar-collapsed-width);
 }
 
 .sidebar-toggle {

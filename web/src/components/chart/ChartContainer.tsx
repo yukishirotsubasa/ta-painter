@@ -37,6 +37,11 @@ export interface ChartHandle {
    * 需要在 click handler 內一路同步拿到 blob。
    */
   takeScreenshotSync(options?: ChartScreenshotOptions): Blob | null;
+  /**
+   * 依容器目前尺寸立刻重繪（responsive1 的佈局切換）：底下的 ResizeObserver 要等下一幀才回呼，
+   * 中間會先閃一次舊尺寸的圖表。
+   */
+  resize(): void;
 }
 
 interface ChartContainerProps {
@@ -218,6 +223,11 @@ export function ChartContainer({
       takeScreenshotSync: (options) => {
         const chart = chartRef.current;
         return chart ? takeChartScreenshotBlobSync(chart, options) : null;
+      },
+      resize: () => {
+        const chart = chartRef.current;
+        const container = containerRef.current;
+        if (chart && container) chart.resize(container.clientWidth, container.clientHeight);
       },
     }),
     [],

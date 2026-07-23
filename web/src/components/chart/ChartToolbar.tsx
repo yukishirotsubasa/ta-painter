@@ -10,9 +10,11 @@ interface ChartToolbarProps {
   stockNo: string;
   loading: boolean;
   onSubmit: (stockNo: string) => void;
+  /** 行動版精簡工具列（responsive2）：欄位說明只留給輔助技術讀，畫面上省下橫向空間。 */
+  compact?: boolean;
 }
 
-export function ChartToolbar({ stockNo, loading, onSubmit }: ChartToolbarProps) {
+export function ChartToolbar({ stockNo, loading, onSubmit, compact = false }: ChartToolbarProps) {
   const [draft, setDraft] = useState(stockNo);
   const [entries, setEntries] = useState<StockListEntry[]>([]);
   const [open, setOpen] = useState(false);
@@ -109,7 +111,7 @@ export function ChartToolbar({ stockNo, loading, onSubmit }: ChartToolbarProps) 
 
   return (
     <form className="chart-toolbar" onSubmit={handleSubmit}>
-      <label className="chart-toolbar-label" htmlFor="chart-toolbar-stock-no">
+      <label className={`chart-toolbar-label${compact ? ' sr-only' : ''}`} htmlFor="chart-toolbar-stock-no">
         股票代號
       </label>
       <div className="chart-toolbar-field">

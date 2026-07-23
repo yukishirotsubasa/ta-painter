@@ -127,6 +127,7 @@
 - **影響**：這些互動細節（尤其 `isComposing` 與 `mousedown`/`blur` 的先後）正是最容易在重構時無聲壞掉的部分，回歸只能靠人工重測。另外沙盒環境的 Browser pane 無法截圖（`Screenshot timed out: the Browser pane is not displayed`），驗證只能靠 `javascript_tool` 讀 DOM，成本比一般手測更高。CDP 合成的 Enter 鍵也不會觸發表單的隱式送出，該路徑是改以 `form.requestSubmit()` 驗證、真實 Enter 由使用者複測確認。
 - **現況（2026-07-23 更新，share2）**：`App.tsx` 新增的兩個 effect（分享線條的延後還原、狀態變動回寫 hash）同樣沒有元件測試涵蓋，純函式部分（`readShareHash`/`formatShareHash`/`toShare*` 轉換、`DrawingController.addLine()`）有 17 例單元測試。這次是用「手工組出含 2 條線的 hash → 在 dev server 上以 `javascript_tool` 讀 DOM 驗證」取代拖曳畫線，繞過了 canvas 互動測不了的限制。另記一個沙盒工具面的坑：Browser pane 對「只有 hash 不同」的網址不會重新載入文件（等同瀏覽器的 fragment 導航），`location.reload()` 實測也會把 hash 丟掉，要驗證「帶 hash 開新頁」必須讓網址在 hash 以外也有差異（例如加 `?r=1`）才會觸發真正的 document 載入。
 - **現況（2026-07-23 更新，sidebar1/2/3）**：缺口再度擴大。側邊欄收合、區塊折疊、資料源切換、清單選取／刪除、折疊自動取消選取等互動同樣沒有元件測試，只有抽出的純函式（`lineSelection`、`lineLabel`、`applySubmittedCode`）有涵蓋。更嚴重的是**畫線相關端到端行為在沙盒內完全無法驗證**：Browser pane 為 hidden，CSS transition 與 rAF 凍結、canvas 不重繪、lightweight-charts 的 `subscribeCrosshairMove` 不觸發（實測對 container 與所有子元素派送合成 `mousedown`/`mousemove`/`mouseup` 都畫不出線），連第二個 pane 的 DOM row 與分隔線都要等實際 paint 才生成。因此「拖曳畫線 → 清單列出 → 點選高亮 → 刪除消失」只能靠使用者人工測。
+- **現況（2026-07-23 更新，responsive1/2）**：斷點與佈局層的互動同樣沒有元件測試，只有 `useResponsive` 的 store 函式（`readBreakpoint`/`subscribeBreakpoint`，6 例，以 `vi.stubGlobal('window', …)` 假 MQL 驗證）與 `chipLabel.ts`（9 例）有涵蓋；`useLayoutEffect` 觸發 `ChartHandle.resize()`、`settingsOpen` 的斷點連動、圖例 chip 與參數小面板的互斥規則都靠手測。**另外發現 hidden pane 的凍結範圍比先前記錄的更廣**：`document.visibilityState === 'hidden'` 時整個 rendering steps 都不跑，因此 `requestAnimationFrame` 直接 timeout、`ResizeObserver` 回呼不觸發、**`matchMedia` 的 `change` 事件也不派送**（實測 `resize_window` 後 CSS media query 已套用、`matchMedia().matches` 已翻轉，但 React 收不到事件 → 佈局不切換），CSS transition 也不推進（側邊欄收合後 `getComputedStyle().width` 卡在起始值 260px，要暫時 `style.transition = 'none'` 才量得到終值 32px）。結論：**「拖曳視窗跨斷點」這類即時切換在沙盒內無法驗證**，只能「調整視窗尺寸 → 重新載入 → 量測初始渲染」，加上以程式化 `element.click()` 驅動互動後讀 DOM。
 - **現況（2026-07-23 更新，share4/5）**：`ShareMenu` 的分支邏輯（剪貼簿成功／不支援／被拒、Web Share 成功／`canShare` 回 false／使用者取消／被拒、截圖回 `null` 的失敗路徑）同樣沒有元件測試，純函式部分（`imageShare` 的能力偵測與 `screenshot` 的編碼路徑）有 20 例單元測試。這次是在 dev server 上用 `javascript_tool` 側錄 `clipboard.write`／`canShare`／`share`／`HTMLAnchorElement.prototype.click`／`URL.createObjectURL`，再對每條分支各點一次按鈕來驗證——涵蓋度夠，但每次回歸都得重搭一次側錄，成本高且無法自動重跑。
 - **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`、`ShareMenu` 的 fallback 分支（stub 掉 `imageShare` 的能力偵測即可，不需要真的 canvas）。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
 - **對應任務**：暫無（defer，下次動到元件互動邏輯時一併補）。
@@ -172,6 +173,30 @@
 - **影響**：stub 驗的是**我們的分支邏輯**，驗不到平台行為——最可能出問題的兩點都在 stub 之外：iOS Safari 對 user activation 的實際判定（同步截圖約 82 ms 是否仍在可接受範圍）、以及各家 App 對 `image/png` 檔案分享的支援程度。若真機失敗，症狀會是「按了沒反應」或直接跳下載，使用者不會知道原因。
 - **建議**：真機補測 iOS Safari 與 Android Chrome 各一次，重點看：分享面板是否叫得出來、LINE 是否收得到圖、按取消後是否**沒有**多出下載檔。若 iOS 因 activation 被拒，可考慮改成「先在 idle 時預先截好一張放著、click 時直接用」的預熱策略，或退而求其次讓行動裝置也走下載。
 - **對應任務**：暫無（需實體裝置，defer 至有機會實測時）。
+
+## 斷點 1024px 在 JS 與 CSS 各寫一份，且邊界重疊（正好 1024px 時兩邊同時成立）
+
+- **來源任務**：[responsive1](task-pool/responsive1.md)（2026-07-23）
+- **狀況**：`hooks/useResponsive.ts` 用 `(min-width: 1024px)` 判定桌面版；`web/src/index.css` 既有的字級調整用 `@media (max-width: 1024px)` 判定行動版。兩者都寫死 1024，但**邊界方向相反且都含等號**——視窗**正好 1024px** 時，JS 認定 `desktop`（跑桌面佈局、完整工具列），CSS 卻同時套用行動版字級（`font-size: 16px`、`h1`/`h2` 縮小）。CSS media query 無法讀 JS 常數（`DESKTOP_MIN_WIDTH`），反之亦然，目前沒有共用來源。
+- **影響**：只有 1024px 這一個寬度會出現「桌面佈局配行動字級」的混搭，視覺上只是字略小，不影響功能；實測 1024×768 佈局判定與圖表尺寸都正確。真正的風險是日後調整斷點時**只改一邊**——JS 改成 1280 而 CSS 留在 1024，會出現一段「桌面佈局但字級已縮小」的區間，而且沒有任何測試會攔到。
+- **建議**：兩個方向。(1) 把 CSS 那側改成 `@media (max-width: 1023.98px)`，讓邊界互斥（成本最低，先解掉重疊）。(2) 若日後斷點會再調整，改由 JS 單一來源驅動——`useResponsive` 已經把斷點掛成 `.app-desktop`/`.app-mobile` class，字級規則可改寫成 `.app-mobile { font-size: 16px }` 之類的 class 選擇器，CSS 就不必再有自己的 media query。
+- **對應任務**：暫無（defer，下次調整斷點時一併處理）。
+
+## 指標圖例的桌面版讓位靠 CSS class 與側邊欄寬度硬耦合
+
+- **來源任務**：[responsive2](task-pool/responsive2.md)（2026-07-23）
+- **狀況**：`.indicator-legend` 覆蓋在圖表左上角，桌面版必須往右讓開側邊欄才不會被蓋住。做法是 `App.tsx` 依 `settingsOpen` 在 `.app` 掛 `app-settings-open` class，`IndicatorLegend.css` 用 `.app-desktop .indicator-legend` / `.app-desktop.app-settings-open .indicator-legend` 兩條規則在 `calc(var(--sidebar-collapsed-width) + 8px)` 與 `calc(var(--sidebar-width) + 8px)` 之間切換 `padding-left`。寬度變數已提到 `index.css` 的 `:root` 與 `Sidebar.css` 共用，但「圖例要知道側邊欄現在多寬」這件事本身仍是跨元件的隱性耦合。
+- **影響**：目前側邊欄寬度固定兩態，運作正常（實測展開 268px／收合 40px，chip 起點分別為 x=268.6／40.6）。但若日後側邊欄改成可拖曳調寬、或行動版改用側邊抽屜，這兩條規則會靜默失準——症狀是前幾個 chip 被側邊欄蓋住、點不到，不會有任何錯誤訊息。另外 `.app-settings-open` 這個 class 目前只有圖例在用，很容易在重構時被誤刪。
+- **建議**：若側邊欄寬度變成動態的，改由 `Sidebar` 把目前寬度寫進 `.app` 的 CSS 變數（例如 `--settings-inset`），圖例只讀那個變數，耦合方向就從「圖例猜側邊欄」變成「側邊欄宣告自己佔多寬」。在寬度維持兩態的現況下不值得先做。
+- **對應任務**：暫無（defer，側邊欄寬度改為動態時一併處理）。
+
+## 設定面板與參數小面板缺鍵盤關閉與焦點管理
+
+- **來源任務**：[responsive2](task-pool/responsive2.md)（2026-07-23）
+- **狀況**：`OverlayPanel`（行動版設定）與 `IndicatorLegend` 的參數小面板都刻意做成**非模態**（無遮罩、不鎖捲動、面板開著仍看得到並操作得到圖表），但也因此沒有做任何焦點處理：開啟時焦點不會移進面板、關閉後不會還原到觸發按鈕、Tab 可以跑到底下被覆蓋的圖表工具列、**沒有 Esc 關閉**。目前只能點面板上的 `✕`（或再點一次觸發鈕／同一個 chip）關閉。
+- **影響**：滑鼠與觸控使用者不受影響；純鍵盤／螢幕閱讀器使用者在行動版設定面板開啟後，Tab 順序會與視覺順序脫節（面板在 DOM 中位於 header 之後、圖表之前，實際上覆蓋全區），且沒有慣用的 Esc 逃生路徑。
+- **建議**：成本很低的兩步：(1) 兩個面板各加一個 `keydown` 監聽，`Escape` 時呼叫 `onClose`；(2) 開啟時把焦點移到面板標題（`tabIndex={-1}` + `focus()`），關閉時還原到觸發按鈕。真要做完整 modal（focus trap + `aria-modal`）則與「非模態、要能同時看圖」的設計相衝突，不建議。
+- **對應任務**：暫無（defer，下次動到面板互動時一併補）。
 
 ## 分享連結的線條還原綁在「第一批 bars 到位」，首查失敗後可能把線畫到別支股票上
 

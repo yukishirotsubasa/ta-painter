@@ -1,0 +1,46 @@
+/*
+ * 佈局 chrome 的樣式（頁首與行動版專屬容器）。圖表不歸這裡管：
+ * `.app-main` 固定是 `.app` 的直接子節點，跨斷點切換時才不會重建圖表實例（見 App.css）。
+ */
+
+.app-header {
+  grid-row: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+/* 行動平板版：橫向空間不夠，工具列改為換行堆疊並縮小留白。 */
+.app-header-mobile {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+/* 開關設定 bottom sheet；與 .drawing-toggle／.share-menu-button 同一組外觀。 */
+.app-settings-toggle {
+  margin-left: auto;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.app-settings-toggle[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+

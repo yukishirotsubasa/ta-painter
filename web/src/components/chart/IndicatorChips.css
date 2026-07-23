@@ -1,0 +1,45 @@
+/* 圖例的 chip 列；覆蓋定位由外層 `.indicator-legend` 負責（見 IndicatorLegend.css）。 */
+.indicator-chips {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  max-width: 100%;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* 捲動條會擋到 K 線，隱藏後仍可滑動。 */
+  scrollbar-width: none;
+}
+
+.indicator-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.indicator-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.indicator-chip[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.indicator-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}

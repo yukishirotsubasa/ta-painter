@@ -1,0 +1,88 @@
+/*
+ * 覆蓋在圖表左上角的圖例（chip 列 + 參數小面板）：`.app` grid row 2 與圖表同格，
+ * 只佔自己內容的大小，其餘區域讓事件穿透回圖表（pan/zoom 不受影響）。
+ * 疊層需高於圖表 pane 把手才點得到、低於側邊欄與設定面板；順序見 index.css。
+ */
+.indicator-legend {
+  grid-row: 2;
+  grid-column: 1;
+  align-self: start;
+  justify-self: stretch;
+  z-index: var(--z-chips);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  pointer-events: none;
+  text-align: left;
+}
+
+.indicator-legend > * {
+  pointer-events: auto;
+}
+
+/* 桌面版側邊欄覆蓋在圖表左側，圖例整組往右讓開，避免前幾個 chip 被蓋住。 */
+.app-desktop .indicator-legend {
+  padding-left: calc(var(--sidebar-collapsed-width) + 8px);
+}
+
+.app-desktop.app-settings-open .indicator-legend {
+  padding-left: calc(var(--sidebar-width) + 8px);
+}
+
+/* 點 chip 後在正下方展開的單一指標參數面板（桌面／行動同一份）。 */
+.indicator-legend-panel {
+  max-width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+
+.indicator-legend-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.indicator-legend-panel-title {
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.indicator-legend-panel-close {
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  padding: 8px;
+  margin: -8px -6px -8px 0;
+  cursor: pointer;
+}
+
+.indicator-legend-panel-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.indicator-legend-panel-remove {
+  font: inherit;
+  font-size: 13px;
+  color: #ef5350;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}

@@ -33,6 +33,11 @@ interface ShareMenuProps {
   fileName: string;
   /** 系統分享面板顯示的標題。 */
   shareTitle: string;
+  /**
+   * 行動版精簡工具列（responsive2）：只留「分享圖片」與連結分享。
+   * 「複製圖片」在行動裝置上用處不大（要貼到別的 App 走系統分享面板更直接），且橫向空間有限。
+   */
+  compact?: boolean;
 }
 
 /** 圖表還沒建立（例如查詢失敗只顯示錯誤訊息）時，把 `null` 轉成 reject 走統一的失敗路徑。 */
@@ -56,7 +61,13 @@ function requireBlob(screenshot: Promise<Blob | null>): Promise<Blob> {
  * 唯一的例外是使用者在系統分享面板按取消（`AbortError`）：那是使用者的決定，靜靜回到 idle，
  * 不該補一個下載檔給他。
  */
-export function ShareMenu({ takeScreenshot, takeScreenshotSync, fileName, shareTitle }: ShareMenuProps) {
+export function ShareMenu({
+  takeScreenshot,
+  takeScreenshotSync,
+  fileName,
+  shareTitle,
+  compact = false,
+}: ShareMenuProps) {
   const [status, setStatus] = useState<ImageStatus>('idle');
 
   useEffect(() => {
@@ -112,12 +123,14 @@ export function ShareMenu({ takeScreenshot, takeScreenshotSync, fileName, shareT
 
   return (
     <div className="share-menu">
-      <ShareLinkButton />
-      <button type="button" className="share-menu-button" onClick={copyImage}>
-        複製圖片
-      </button>
+      <ShareLinkButton compact={compact} />
+      {!compact && (
+        <button type="button" className="share-menu-button" onClick={copyImage}>
+          複製圖片
+        </button>
+      )}
       <button type="button" className="share-menu-button" onClick={shareImage}>
-        分享圖片
+        {compact ? '分享圖' : '分享圖片'}
       </button>
       {status !== 'idle' && (
         <span className="share-menu-feedback" role="status">

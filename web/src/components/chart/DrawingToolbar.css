@@ -1,14 +1,35 @@
+/* fieldset 外框把「畫線模式」與「線色」框成明顯的一組，legend 直接標出這組是做什麼的。 */
 .drawing-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
+  padding: 0 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.drawing-toolbar-active {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.drawing-toolbar-legend {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text);
+  padding: 0 4px;
+}
+
+.drawing-toolbar-active .drawing-toolbar-legend {
+  color: var(--accent);
 }
 
 .drawing-toggle {
   font: inherit;
   font-size: 13px;
   color: var(--text);
-  background: transparent;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 4px 10px;
@@ -28,6 +49,14 @@
   gap: 4px;
   font-size: 13px;
   color: var(--text);
+  cursor: pointer;
+}
+
+/* 目前選色畫出的線段預覽：色塊本身只看得到顏色，加一段線才看得出是「線的顏色」。 */
+.drawing-toolbar-preview {
+  width: 28px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 
 .drawing-toolbar-color {

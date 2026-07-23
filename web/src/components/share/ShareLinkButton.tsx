@@ -16,7 +16,12 @@ const FEEDBACK_TEXT: Record<Exclude<CopyStatus, 'idle'>, string> = {
  * 所以這顆就只是把目前網址複製到剪貼簿，不需要另外組連結。
  * 按鈕文字帶上「URL」與旁邊的「複製圖片」「分享圖片」區隔，避免只寫「分享」看不出分享的是什麼。
  */
-export function ShareLinkButton() {
+interface ShareLinkButtonProps {
+  /** 行動版精簡工具列（responsive2）：按鈕文字縮短為「連結」，語意由旁邊的「分享圖」對比出來。 */
+  compact?: boolean;
+}
+
+export function ShareLinkButton({ compact = false }: ShareLinkButtonProps = {}) {
   const [status, setStatus] = useState<CopyStatus>('idle');
 
   useEffect(() => {
@@ -37,8 +42,13 @@ export function ShareLinkButton() {
 
   return (
     <div className="share-link">
-      <button type="button" className="share-link-button" onClick={copyCurrentUrl}>
-        分享URL
+      <button
+        type="button"
+        className="share-link-button"
+        aria-label={compact ? '分享URL' : undefined}
+        onClick={copyCurrentUrl}
+      >
+        {compact ? '連結' : '分享URL'}
       </button>
       {status !== 'idle' && (
         <span className="share-link-feedback" role="status">

@@ -7,7 +7,7 @@
 ## Suggested Implementation Order
 
 ```text
-responsive1 -> responsive2 -> responsive3
+responsive3
 ci1 -> ci2 -> ci3
 ```
 
@@ -93,8 +93,8 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [responsive1](task-pool/responsive1.md) | 等待 | Medium | - | `useResponsive` + 斷點佈局骨架，縮放視窗/裝置模擬時佈局正確切換且圖表 resize |
-| [responsive2](task-pool/responsive2.md) | 等待 | Medium | responsive1, sidebar1 | 行動版設定 bottom sheet（複用 sidebar 設定區塊）+ 精簡工具列，手機/平板實測操作順暢 |
+| [responsive1](task-pool/responsive1.md) | 完成 | Medium | - | `useResponsive`（`useSyncExternalStore` + `matchMedia`，`>=1024px` 桌面）+ `DesktopLayout`／`MobileLayout` 骨架。**實作時圖表刻意留在切換之外**：兩個 Layout 只回傳 chrome（頁首 + 設定面板），`<main>` + `ChartContainer` 固定掛在 `.app` 上，否則跨斷點時 React 會卸載圖表、連 pan/zoom 與手繪線一起重建；版面改用 `.app` 兩列 grid（row 2 圖表與設定面板同格重疊）取代原本的 `.app-body` + 絕對定位。新增 `ChartHandle.resize()`，斷點變動時由 `useLayoutEffect` 主動呼叫（ResizeObserver 晚一幀會先閃舊尺寸） |
+| [responsive2](task-pool/responsive2.md) | 完成 | Medium | responsive1, sidebar1 | 行動版設定改用 `OverlayPanel`（**實測回饋後由貼底 bottom sheet 改為覆蓋整個圖表區**：貼底版面板太矮不好操作；仍是 grid row 2 的覆蓋層，不擠壓圖表尺寸、關閉即還原）承載原本的側邊欄設定區塊。`IndicatorLegend`＝chip 列＋點擊在正下方展開的參數小面板，**依回饋改為桌面／行動共用**（由 App 直接掛在 `.app` 上，與圖表一樣不參與佈局切換；容器 `pointer-events:none` 只讓 chip 與面板吃事件，桌面版另依側邊欄寬度讓開）。從 `IndicatorPanel` 抽出 `IndicatorParamFields` 給三處共用，chip 文字／色點為純函式 `chipLabel.ts`（簡稱取自標籤全形括號，例 `MA(60)`、`MACD(12,26,9)`）。App 的 `sidebarCollapsed` 改為 `settingsOpen`（桌面側邊欄與行動面板共用一個狀態，sidebar3 取消選取規則沿用），切到行動版自動收起。精簡工具列以 `compact` prop 實作：標題與欄位說明改 `sr-only`（不用 `display:none`，保留無障礙樹）、按鈕文字縮短、**行動版拿掉「複製圖片」**（改走系統分享面板）。畫線工具列**依回饋改為 `fieldset`/`legend` 群組**：外框＋「畫線」標題把模式開關與選色框成一組，色塊旁加一段用目前顏色畫的 SVG 線段預覽，畫線模式開啟時整組高亮 |
 | [responsive3](task-pool/responsive3.md) | 等待 | Medium | responsive1 | 觸控畫線手勢最終調整，真機測試畫線與 pan/zoom 切換無衝突 |
 
 ### Maintenance / Other
@@ -117,6 +117,7 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 - `../docs/proxy.md` — 已實作 CORS proxy（`worker/`，Deno Deploy，`/proxy/{tpex|yahoo}?path=...`）
 - `../docs/data-layer.md` — 已實作資料層行為（provider registry、三個 provider、資料源路由與 App 查詢流程、逐月節流查詢、localStorage 快取）
 - `../docs/sidebar.md` — 已實作設定側邊欄（覆蓋式版面與疊層順序、可折疊骨架、資料源區塊、畫線清單與選取規則）
+- `../docs/responsive.md` — 已實作 RWD 佈局（`useResponsive` 斷點、`.app` 兩列 grid 與「圖表不參與佈局切換」、桌面／行動 chrome、行動版設定覆蓋面板、指標圖例 chip 與參數小面板、精簡工具列）
 - `../docs/indicators.md` — 已實作指標架構（IndicatorDefinition/registry、MA/布林通道/MACD 指標、指標清單 UI）
 - `../docs/stock-list.md` — 已實作股票清單自動更新（來源／解析規則、有效性 gate 與重試、每週 workflow 與 Pages 串接）
 - `../docs/drawing.md` — 已實作畫線模組（TrendLinePrimitive、正式 DrawingController：模式切換、按下拖曳、多線陣列管理、切股清除、清單 API 與 `ChartHandle`）
