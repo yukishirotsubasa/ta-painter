@@ -25,8 +25,9 @@
 - **建議**：新增第二種 separate-pane 指標時，需實測「兩個 separate-pane 指標同時掛載 → 移除前面那個 → 檢查後面那個的 pane 是否還在正確位置」這個情境；若證實有錯位問題，需改為由 `ChartContainer` 直接查詢 `chart.panes()` 目前實際數量/位置來決定 index，而不是讓 allocator 自己維護獨立計數器。
 - **對應任務**：無獨立任務；於新增第 2 個 separate-pane 指標時一併實測處理。
 
-## `ChartToolbar` 輸入框不會跟隨外部 `stockNo` 變化重新同步
+## ~~`ChartToolbar` 輸入框不會跟隨外部 `stockNo` 變化重新同步~~（已解：symbol2 加上同步 `useEffect`，2026-07-23）
 
+- **解法**：`ChartToolbar.tsx` 加了 `useEffect(() => { setDraft(stockNo); ... }, [stockNo])`。symbol2 讓 `App.tsx` 依股票清單正規化代號大小寫（`00631l` → `00631L`）並回寫，正是「外部改變 `stockNo`」的實例，已實測輸入框同步更新。share2 的 URL 還原不需再處理這件事。
 - **來源任務**：[chart3](task-pool/chart3.md)
 - **狀況**：`ChartToolbar.tsx` 用 `useState(stockNo)` 初始化本地 `draft` state，只在元件掛載當下取一次 `stockNo` prop 的值，之後 `stockNo` prop 變動不會反向同步回 `draft`（沒有對應的同步 `useEffect`）。目前唯一會改變 `stockNo` 的路徑就是這個元件自己的 `onSubmit`，所以 `draft` 與 `stockNo` 目前保證同步，沒有可觀察的問題。
 - **影響**：[share2](task-pool/share2.md)（URL hash 還原）預計會在 `App.tsx` 用解碼出的股票代號呼叫 `setStockNo()`，屆時 `stockNo` 會被外部（非 `ChartToolbar` 自己）改變；`ChartToolbar` 的輸入框仍會顯示掛載當下的舊代號，即使圖表已經正確切換到還原後的新代號，造成輸入框顯示值與實際圖表資料不一致。
@@ -116,6 +117,22 @@
 - **影響**：parser 的 32 個單元測試由 vitest 執行，不受本機 Node 版本影響，所以日常改動仍有測試保護；但「對真實線上來源實跑一次」這種端到端驗證，本機無法一鍵重現，只能靠 GitHub Actions 上的 `workflow_dispatch`，回饋比較慢。上游改版時的除錯體驗尤其受影響。
 - **建議**：若日後需要本機重跑，成本由低到高有三條路：(1) 用 `npx tsx scripts/stock-list/main.ts`（多一個 devDependency，不動 Node）；(2) 加一個 `vite-node` 或 `vitest` 的一次性 script；(3) 升級本機 Node 到 22.6+。在使用者維持現況的前提下，維持「本機只跑測試、實跑交給 CI」即可，不需預先處理。
 - **對應任務**：暫無（defer，使用者決定不升級本機 Node）。
+
+## 沒有元件測試環境，React 互動邏輯只能靠瀏覽器手測
+
+- **來源任務**：[symbol2](task-pool/symbol2.md)（2026-07-23）
+- **狀況**：vitest 目前跑在 node 環境（未裝 jsdom／happy-dom 與 testing-library），所有測試都只涵蓋純函式。symbol2 把可測邏輯盡量抽成純函式（`searchStocks`／`findByCode`／`findByNamePrefix`／`resolveSubmitCode`，23 例），但 `ChartToolbar` 內的互動——↑/↓ 環繞選取、Enter 送出、`isComposing` 擋隱式送出、`onMouseDown` 早於 `blur`、`stockNo` 外部變動的同步 `useEffect`、提示訊息的清除時機——沒有任何自動化測試，本次是逐項在 dev server 上以 DOM 查詢驗證的。
+- **影響**：這些互動細節（尤其 `isComposing` 與 `mousedown`/`blur` 的先後）正是最容易在重構時無聲壞掉的部分，回歸只能靠人工重測。另外沙盒環境的 Browser pane 無法截圖（`Screenshot timed out: the Browser pane is not displayed`），驗證只能靠 `javascript_tool` 讀 DOM，成本比一般手測更高。CDP 合成的 Enter 鍵也不會觸發表單的隱式送出，該路徑是改以 `form.requestSubmit()` 驗證、真實 Enter 由使用者複測確認。
+- **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框。
+- **對應任務**：暫無（defer，下次動到元件互動邏輯時一併補）。
+
+## 股票清單型別在 `scripts/` 與 `src/` 各自宣告一份
+
+- **來源任務**：[symbol2](task-pool/symbol2.md)（2026-07-23）
+- **狀況**：`Market` 與 `StockListEntry` 同時存在於 `web/scripts/stock-list/stockList.ts`（產出端）與 `web/src/lib/stock/types.ts`（消費端），內容相同但各自宣告。兩邊分屬 `tsconfig.node.json` 與 `tsconfig.app.json` 兩個編譯單元（`src/` 不能 import `scripts/`，否則 app 建置會把 Node 專用程式碼牽進來），所以不是單純忘了共用。
+- **影響**：`stock-list.json` 的欄位若增減（例如未來加產業別、市場再細分），要同步改兩處；漏改一處不會有型別錯誤——消費端只是拿不到新欄位，或反過來把已消失的欄位當成必填而在 `isStockListEntry()` 把整份清單過濾成空，症狀是「搜尋突然什麼都找不到」而非編譯失敗。
+- **建議**：真要共用的話，把型別抽到兩個 tsconfig 都納入的第三處（例如 `web/shared/stockList.types.ts`，純型別檔、無執行期程式碼），兩邊各自 `import type`。欄位穩定的現況下成本效益不高，可等實際要改欄位時再做。
+- **對應任務**：暫無（defer）。
 
 ## ~~三來源成交量口徑不一致（Yahoo 略低）~~（決策：不處理，2026-07-22）
 

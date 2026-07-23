@@ -12,6 +12,9 @@ import type { IndicatorInstance, IndicatorParamValues } from './lib/chart/indica
 import { TwseProvider } from './lib/data/providers/twseProvider';
 import { fetchDailyRange } from './lib/data/throttle';
 import type { DateRange, FetchProgress, OhlcvBar } from './lib/data/types';
+import { findByCode } from './lib/stock/search';
+import { loadStockList } from './lib/stock/stockList';
+import type { SymbolSelection } from './lib/stock/types';
 import './App.css';
 
 const DEFAULT_STOCK_NO = '2330';
@@ -26,7 +29,9 @@ function lastMonthsRange(months: number): DateRange {
 }
 
 function App() {
-  const [stockNo, setStockNo] = useState(DEFAULT_STOCK_NO);
+  // market 目前只被記錄下來，供 sidebar2 的官方源自動路由（上市→TWSE、上櫃→TPEx）使用。
+  const [symbol, setSymbol] = useState<SymbolSelection>({ code: DEFAULT_STOCK_NO, market: null });
+  const stockNo = symbol.code;
   const [bars, setBars] = useState<OhlcvBar[]>([]);
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +55,23 @@ function App() {
     setIndicators((prev) => prev.map((instance) => (instance.id === instanceId ? { ...instance, params } : instance)));
   }
 
+  // 代號可能來自下拉建議、手動輸入或（未來）URL 還原，一律回頭查清單補上市場別，
+  // 順便把代號正規化成清單裡的寫法（例如 00631l → 00631L）。查無此代號則維持 null。
+  useEffect(() => {
+    if (symbol.market !== null) return;
+
+    let cancelled = false;
+    loadStockList()
+      .then((list) => {
+        const entry = findByCode(list, symbol.code);
+        if (!cancelled && entry) setSymbol({ code: entry.code, market: entry.market });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
+
   useEffect(() => {
     const controller = new AbortController();
     setError(null);
@@ -71,7 +93,11 @@ function App() {
     <div className="app">
       <header className="app-header">
         <h1>TA Painter</h1>
-        <ChartToolbar stockNo={stockNo} loading={progress !== null} onSubmit={setStockNo} />
+        <ChartToolbar
+          stockNo={stockNo}
+          loading={progress !== null}
+          onSubmit={(code) => setSymbol({ code, market: null })}
+        />
         <DrawingToolbar
           drawingMode={drawingMode}
           onDrawingModeChange={setDrawingMode}

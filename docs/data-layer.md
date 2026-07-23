@@ -90,5 +90,6 @@ TPEx／Yahoo 直連會被 CORS 擋，需經 CORS proxy 轉發（見 [proxy.md](p
 ## 已知限制 / 尚未實作
 
 - `TpexProvider`、`YahooProvider` 已實作並註冊，但**尚未接進 UI**：目前 `App.tsx` 仍固定 `import` 並使用 `TwseProvider`，因此上櫃股與 Yahoo 來源目前只能由 console 手動呼叫、無法從畫面查詢。將來源接進查詢流程屬於長區間自動選源／切源提示 UI（[data7](../project-planning/task-pool/data7.md)）的範疇，尚未實作。
+  - symbol2 已讓 `App.tsx` 依股票清單記下目前代號的市場別（`SymbolSelection.market`，見 [symbol-search.md](./symbol-search.md)），但還沒有任何程式讀它；依市場別自動路由 TWSE／TPEx 屬 [sidebar2](../project-planning/task-pool/sidebar2.md)。實務影響：從搜尋建議選到上櫃股會走 `TwseProvider` 而查詢失敗。
 - Yahoo 的成交量不含盤後定價／鉅額交易，數值略低於 TWSE／TPEx 官方（OHLC 一致）；三來源的量能單位雖已統一為股數，但同一檔股票跨來源查詢時量能會有小幅落差，見 [technical-debt.md](../project-planning/technical-debt.md)。
 - TPEx／Yahoo 的反爬蟲／IP 封鎖規則不受我方控制，proxy 可能再次失效且目前無監控，見 [technical-debt.md](../project-planning/technical-debt.md)。

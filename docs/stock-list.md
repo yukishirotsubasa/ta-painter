@@ -2,6 +2,8 @@
 
 每週由 GitHub Actions 在 runner 上抓取台股上市／上櫃清單，產出 `web/public/stock-list.json` 供前端使用。因為在 server 端執行，**沒有 CORS 問題、不經 `worker/` proxy**（與執行期的資料層不同，見 [`data-layer.md`](./data-layer.md)、[`proxy.md`](./proxy.md)）。
 
+前端如何載入與搜尋這份清單見 [`symbol-search.md`](./symbol-search.md)。
+
 ## 資料來源
 
 | 市場 | 來源 | 格式 | 編碼 |
