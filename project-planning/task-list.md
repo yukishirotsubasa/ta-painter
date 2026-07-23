@@ -8,7 +8,7 @@
 
 ```text
 share1 -> share2
-symbol1 -> symbol2 -> data7 -> sidebar1 -> sidebar2
+symbol2 -> data7 -> sidebar1 -> sidebar2
 sidebar3 -> responsive1 -> responsive2 -> responsive3
 share3 -> share4 -> share5
 ci1 -> ci2 -> ci3
@@ -46,7 +46,7 @@ ci1 -> ci2 -> ci3
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [symbol1](task-pool/symbol1.md) | 等待 | Medium | - | 每週 cron GitHub Actions 抓 TWSE 上市 + TPEx 上櫃（代號/名稱/市場別），輸出 `web/public/stock-list.json` 並 commit 回 repo（server 端抓取，無 CORS） |
+| [symbol1](task-pool/symbol1.md) | 待確認 | Medium | - | 每週 cron GitHub Actions 抓 TWSE 上市（ISIN，分類白名單）+ TPEx 上櫃（MOPS CSV），輸出 `web/public/stock-list.json` 並 commit 回 repo（server 端抓取，無 CORS）；已對真實來源實跑產出 2205 檔，待 GitHub 上實跑 workflow 確認排程／commit／Pages 串接 |
 | [symbol2](task-pool/symbol2.md) | 等待 | Medium | symbol1 | `ChartToolbar` 載入清單，代號或名稱模糊搜尋 + 下拉建議 + 鍵盤選取，帶入代號與市場別；順帶修 `ChartToolbar` 不同步 `stockNo` 技術債 |
 
 ### indicator Module
@@ -120,6 +120,7 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 - `../docs/proxy.md` — 已實作 CORS proxy（`worker/`，Deno Deploy，`/proxy/{tpex|yahoo}?path=...`）
 - `../docs/data-layer.md` — 已實作資料層行為（provider registry、TwseProvider、逐月節流查詢、localStorage 快取）
 - `../docs/indicators.md` — 已實作指標架構（IndicatorDefinition/registry、MA/布林通道/MACD 指標、指標清單 UI）
+- `../docs/stock-list.md` — 已實作股票清單自動更新（來源／解析規則、有效性 gate 與重試、每週 workflow 與 Pages 串接）
 - `../docs/drawing.md` — 已實作畫線模組（TrendLinePrimitive、正式 DrawingController：模式切換、按下拖曳、多線陣列管理、切股清除、選取刪除單條線）
 
 ---

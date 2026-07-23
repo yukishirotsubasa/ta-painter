@@ -99,6 +99,24 @@
 - **建議**：下次動到 `ma.ts` 時，把 `DEFAULT_COLOR` 改成 `import { DEFAULT_LINE_COLOR } from '../colors'`，讓三個指標共用單一預設線色來源。
 - **對應任務**：暫無（defer，動到 `ma.ts` 時順手整併）。
 
+## 股票清單的有效性 gate 只擋「整份為空」，單一分類／單一來源縮水會靜默通過
+
+- **來源任務**：[symbol1](task-pool/symbol1.md)（2026-07-23）
+- **狀況**：`web/scripts/stock-list/fetchSources.ts` 的 gate 是「該來源解析後 rows 為空 → 整體失敗」，判定粒度是**整個來源**。但 TWSE 端實際是三個分類（`股票`／`創新板`／`ETF`）各自累加，且分類名採**精確字串比對**（見 [`docs/stock-list.md`](../docs/stock-list.md)）。若 TWSE 只是把其中一類改名（例如 `創新板` → `創新板股票`），該類會整段被跳過、其餘兩類照常解析，rows 不為空 → gate 放行 → 靜默發佈一份少了一整類標的的清單，不會有任何失敗通知。同理，MOPS CSV 若某次只回傳少數幾列，也一樣會通過。解碼層也幫不上忙：Node 的 Big5/GBK 解碼器把 0x80–0xFF 單位元組映到私用區而不丟錯，`fatal: true` 攔不到「編碼猜錯」，gate 是唯一防線。
+- **影響**：目前三個分類名與實際頁面完全吻合（2026-07-23 實跑：上市 1314 檔 + 上櫃 891 檔 = 2205 檔），沒有可觀察問題。但這類失效的特徵是**沒有錯誤訊息**——使用者只會發現某些代號搜不到（symbol2 完成後更明顯），而不會有 workflow 標紅或通知信，排查成本遠高於直接失敗。
+- **建議**：把 gate 從「非空」加嚴為「合理」，兩個成本很低的方向：
+  1. 每個 TWSE 分類各自要求至少 N 筆（例如 `股票` ≥ 500、`ETF` ≥ 100、`創新板` ≥ 1），任一類掛零就整體失敗。
+  2. 與 repo 內既有的 `web/public/stock-list.json` 比對總數，驟降超過某比例（例如 10%）就失敗；`main.ts` 本來就會讀舊檔做內容比對，拿得到舊清單，改動很小。
+- **對應任務**：暫無（defer，symbol2 完成、清單實際被搜尋使用後再視情況加嚴）。
+
+## 本機 Node 版本無法直接執行股票清單抓取腳本
+
+- **來源任務**：[symbol1](task-pool/symbol1.md)（2026-07-23）
+- **狀況**：`web/scripts/stock-list/` 以 TypeScript 撰寫，靠 Node 內建的型別剝除（22.6+）直接執行 `.ts`，CI 已固定 Node 24。但本機目前是 Node 20，`npm run update-stock-list` 跑不起來；使用者已明確決定**不升級本機 Node**。本次驗證是用 `tsc --rewriteRelativeImportExtensions` 先轉譯到暫存目錄再執行，屬一次性手法，沒有留在 repo 裡。
+- **影響**：parser 的 32 個單元測試由 vitest 執行，不受本機 Node 版本影響，所以日常改動仍有測試保護；但「對真實線上來源實跑一次」這種端到端驗證，本機無法一鍵重現，只能靠 GitHub Actions 上的 `workflow_dispatch`，回饋比較慢。上游改版時的除錯體驗尤其受影響。
+- **建議**：若日後需要本機重跑，成本由低到高有三條路：(1) 用 `npx tsx scripts/stock-list/main.ts`（多一個 devDependency，不動 Node）；(2) 加一個 `vite-node` 或 `vitest` 的一次性 script；(3) 升級本機 Node 到 22.6+。在使用者維持現況的前提下，維持「本機只跑測試、實跑交給 CI」即可，不需預先處理。
+- **對應任務**：暫無（defer，使用者決定不升級本機 Node）。
+
 ## ~~三來源成交量口徑不一致（Yahoo 略低）~~（決策：不處理，2026-07-22）
 
 - **來源任務**：[data6](task-pool/data6.md)

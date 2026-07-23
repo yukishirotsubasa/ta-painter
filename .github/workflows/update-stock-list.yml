@@ -1,0 +1,62 @@
+name: Update Stock List
+
+on:
+  schedule:
+    # 每週一 04:00（台北，UTC+8）＝ 週日 20:00 UTC
+    - cron: '0 20 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-stock-list
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # 直接執行 .ts 需要 Node 內建的型別剝除（22.6+），這裡固定用 24。
+          node-version: '24'
+
+      # 在 runner（server 端）抓取，無 CORS 問題、不需經 worker proxy。
+      # 任一來源失敗會讓這步非零結束，後續不會 commit，等於沿用上一版清單。
+      - name: Fetch stock list
+        run: node web/scripts/stock-list/main.ts
+
+      - name: Commit when changed
+        id: commit
+        run: |
+          if [ -z "$(git status --porcelain -- web/public/stock-list.json)" ]; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo '清單無變動，不產生 commit。'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/public/stock-list.json
+          git commit -m 'chore(symbol): 更新股票清單'
+          git push
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+  # GITHUB_TOKEN 推出的 commit 不會觸發其他 workflow（GitHub 的防迴圈限制），
+  # 因此改為直接呼叫 deploy-pages 這支可重用 workflow，並指定建置剛推上去的 main。
+  deploy:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy-pages.yml
+    with:
+      ref: main

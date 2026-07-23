@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "update-stock-list": "node scripts/stock-list/main.ts",
     "test": "vitest run"
   },
   "dependencies": {
