@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# 型別檢查 gate（ci1）：push 前對 web/ 跑 tsc -b。
+# 目的是擋下「過 vitest 但過不了 tsc -b」的變更 —— push 到 main 會直接觸發
+# Pages 部署，這裡是部署前最後一道防線。
+#
+# 啟用（每個 clone 一次即可）：
+#   git config core.hooksPath .githooks
+#
+# 略過（緊急時）：
+#   git push --no-verify
+#
+# 注意：檢查的是 working tree 目前的檔案內容，不是即將 push 的 commit 快照。
+# 若有未提交的髒改動，結果會反映髒改動。
+
+set -e
+
+ZERO='0000000000000000000000000000000000000000'
+root=$(git rev-parse --show-toplevel)
+touches_web=0
+
+# pre-push 由 stdin 收到多行：<local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+	case "$local_sha" in
+	"$ZERO") continue ;; # 刪除遠端分支，無檔案可檢查
+	esac
+
+	case "$remote_sha" in
+	"$ZERO")
+		# 遠端還沒有這條分支，無從算差異範圍 —— 一律檢查
+		touches_web=1
+		;;
+	*)
+		if git diff --name-only "$remote_sha" "$local_sha" -- 'web/' | grep -q .; then
+			touches_web=1
+		fi
+		;;
+	esac
+
+	[ "$touches_web" -eq 1 ] && break
+done
+
+if [ "$touches_web" -eq 0 ]; then
+	exit 0
+fi
+
+if [ ! -d "$root/web/node_modules" ]; then
+	echo "pre-push: web/node_modules 不存在，請先執行 npm ci（於 web/）" >&2
+	exit 1
+fi
+
+echo "pre-push: 執行 web 型別檢查（tsc -b）..."
+if ! (cd "$root/web" && npm run --silent typecheck); then
+	echo "" >&2
+	echo "pre-push: 型別檢查失敗，push 已中止。" >&2
+	echo "修正後重試，或用 git push --no-verify 略過。" >&2
+	exit 1
+fi
