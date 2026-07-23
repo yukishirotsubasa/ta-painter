@@ -3,7 +3,7 @@ import { ChartContainer, type ChartHandle } from './components/chart/ChartContai
 import { ChartToolbar } from './components/chart/ChartToolbar';
 import { DrawingToolbar } from './components/chart/DrawingToolbar';
 import { IndicatorPanel } from './components/chart/IndicatorPanel';
-import { ShareLinkButton } from './components/share/ShareLinkButton';
+import { ShareMenu } from './components/share/ShareMenu';
 import { DataSourcePanel } from './components/sidebar/DataSourcePanel';
 import { DrawingListPanel } from './components/sidebar/DrawingListPanel';
 import { Sidebar } from './components/sidebar/Sidebar';
@@ -18,6 +18,7 @@ import { getIndicator } from './lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorParamValues } from './lib/chart/indicators/types';
 import { DEFAULT_DATA_SOURCE, estimateRequestCount, fetchBars, type DataSource } from './lib/data/dataSource';
 import type { DateRange, FetchProgress, OhlcvBar } from './lib/data/types';
+import { screenshotFileName } from './lib/share/imageShare';
 import type { ShareLine } from './lib/state/schema';
 import {
   formatShareHash,
@@ -216,7 +217,12 @@ function App() {
           color={drawingColor}
           onColorChange={setDrawingColor}
         />
-        <ShareLinkButton />
+        <ShareMenu
+          takeScreenshot={() => chartRef.current?.takeScreenshot() ?? Promise.resolve(null)}
+          takeScreenshotSync={() => chartRef.current?.takeScreenshotSync() ?? null}
+          fileName={screenshotFileName(stockNo)}
+          shareTitle={`TA Painter ${stockNo}`}
+        />
         {progress && (
           <div className="progress" role="progressbar" aria-valuenow={progress.loaded} aria-valuemax={progress.total}>
             <div className="progress-bar" style={{ width: `${(progress.loaded / progress.total) * 100}%` }} />

@@ -1,6 +1,6 @@
-# URL 分享（`web/src/lib/state/`、`components/share/ShareLinkButton.tsx`、`App.tsx`）
+# 分享（`web/src/lib/state/`、`lib/chart/screenshot.ts`、`lib/share/imageShare.ts`、`components/share/`、`App.tsx`）
 
-> 本文件記錄**已實作**的 URL 狀態分享（share1 編解碼 + share2 hash 還原）。圖片分享（截圖／剪貼簿／Web Share，share3–5）尚未實作，不在此文件範圍。整體規劃見 `project-planning/design.md`。
+> 本文件記錄**已實作**的兩類分享：URL 狀態分享（share1 編解碼 + share2 hash 還原）與圖片分享（share3 截圖 + share4 剪貼簿 + share5 Web Share／下載）。整體規劃見 `project-planning/design.md`。
 
 分享的完整資料流：
 
@@ -100,9 +100,84 @@ hash 同步（同一個 `useEffect`，依賴 `[stockNo, dataSource, range, indic
 - 整段包 `try/catch`：編碼失敗只代表這次沒更新網址，不影響畫面。
 - `toShareLines()` 會略過尚未定案（`points === null`）或時間格式無法編碼（`BusinessDay` 物件形式，本專案的日線資料不會產生）的線，其餘照常分享。
 
-## 分享按鈕（`components/share/ShareLinkButton.tsx`）
+## 分享列（`components/share/ShareMenu.tsx` + `ShareLinkButton.tsx`）
 
-畫面狀態本來就持續同步在網址列上，所以「分享」只是把目前網址複製到剪貼簿，不需要另外組連結：`navigator.clipboard.writeText(window.location.href)`，成功顯示「已複製分享連結」，失敗（非安全連線、瀏覽器不支援、或文件未取得焦點）顯示「複製失敗，請手動複製網址列」，提示 2 秒後自動消失。
+header 上三顆按鈕，`ShareMenu` 是容器（含「複製圖片」「分享圖片」與圖片操作的提示文字），`ShareLinkButton` 是獨立元件（含自己的提示文字）：
+
+| 按鈕 | 行為 | 提示 |
+|---|---|---|
+| 分享URL | `navigator.clipboard.writeText(window.location.href)` | 已複製分享連結／複製失敗，請手動複製網址列 |
+| 複製圖片 | 截圖 → 剪貼簿，失敗退回下載 | 已複製圖片到剪貼簿／無法直接分享，已改為下載／截圖失敗，請稍後再試 |
+| 分享圖片 | 截圖 → 系統分享面板，不支援或被拒退回下載 | 已分享圖片／無法直接分享，已改為下載／截圖失敗，請稍後再試 |
+
+提示皆 2 秒後自動消失。畫面狀態本來就持續同步在網址列上，所以「分享URL」只是複製目前網址，不需要另外組連結；按鈕文字帶「URL」是為了與另外兩顆圖片按鈕區隔（原名「分享」看不出分享的是什麼）。
+
+# 圖片分享
+
+## 截圖（`lib/chart/screenshot.ts`）
+
+```ts
+takeChartScreenshotCanvas(chart, options?): HTMLCanvasElement
+canvasToPngBlob(canvas): Promise<Blob>          // toBlob 包成 promise，回 null 時 reject
+canvasToPngBlobSync(canvas): Blob               // toDataURL + 自解 base64
+takeChartScreenshotBlob(chart, options?): Promise<Blob>
+takeChartScreenshotBlobSync(chart, options?): Blob
+resolvePageBackgroundColor(): string
+fillCanvasBackground(canvas, color): void
+
+interface ChartScreenshotOptions {
+  addTopLayer?: boolean;        // 預設 true
+  includeCrosshair?: boolean;   // 預設 false
+  backgroundColor?: string | null;  // 省略取頁面 --bg，null 保留透明
+}
+```
+
+`ChartContainer` 對外曝光成 `ChartHandle.takeScreenshot()`（Promise）與 `ChartHandle.takeScreenshotSync()`（同步），圖表尚未建立時皆回 `null`。
+
+**手繪線一定會被截入，不需要 offscreen 疊繪備案**（`design.md` 待驗證項目 2 的結論）。lightweight-charts 每個 pane 有主畫布與 top 畫布兩張 canvas，primitive 的 pane view 依 `zOrder()` 分流：`'normal'`（未實作 `zOrder()` 時的預設，`TrendLinePrimitive` 即是）畫在**主畫布**，只有 `'top'` 與十字準星在 top 畫布。`takeScreenshot()` 一定合成主畫布，`addTopLayer` 只決定要不要再疊 top 畫布。預設仍開著，讓日後新增 `zOrder: 'top'` 的 primitive 也一併截入。
+
+`includeCrosshair: false` 由函式庫實作：截圖期間暫時把 `crosshair.mode` 切成 `Hidden`、截完在 `finally` 還原，因此截圖不會有準星殘影，呼叫後選項也維持原值。
+
+**一定要補底色**：`ChartContainer` 的 `layout.background` 是 `transparent`（讓圖表吃頁面底色），截圖主畫布同樣透明。PNG 保留 alpha，貼到不處理透明度的軟體會變黑底，所以 `takeChartScreenshotCanvas()` 預設用 `destination-over` 在內容底下補頁面 `--bg`（`getComputedStyle(document.documentElement)`，取不到時 fallback `#16171d`）。需要透明底時傳 `backgroundColor: null`。
+
+**為什麼有同步版**：見下面「兩條路徑的 user activation」。
+
+## 輸出管道（`lib/share/imageShare.ts`）
+
+只負責「blob 送去哪」，與 `screenshot.ts`（圖表 → blob）分層。一律能力偵測，不看 UA。
+
+```ts
+supportsClipboardImage(): boolean               // ClipboardItem + navigator.clipboard.write 都要在
+copyPngToClipboard(blob | Promise<Blob>): Promise<void>
+toPngFile(blob, fileName): File
+supportsFileShare(file): boolean                // navigator.share + canShare({files:[file]}) 都要過
+sharePngFile(file, title): Promise<void>
+isShareAborted(error): boolean                  // 只認 DOMException AbortError
+downloadBlob(blob, fileName): void
+screenshotFileName(stockNo, date?): string      // ta-painter-2330-20260723.png
+```
+
+- `supportsFileShare()` 必須拿**真的 `File`** 去問 `canShare({ files })`：`navigator.share` 存在不代表吃得下檔案（桌面 Chrome 常常只支援分享網址）。
+- `downloadBlob()` 用 `<a download>` + object URL，`revokeObjectURL` 延到下一個 task（立刻 revoke 部分瀏覽器來不及取用）。
+
+## 兩條路徑的 user activation（`ShareMenu.tsx`）
+
+複製與分享都必須在 click handler 的同一鏈路內完成，但兩個 API 的限制不同，因此用了不同的截圖版本：
+
+| | 複製圖片（share4） | 分享圖片（share5） |
+|---|---|---|
+| 目標 API | `navigator.clipboard.write()` | `navigator.share()` |
+| 吃得下 promise？ | **可以**——`ClipboardItem` 的值允許 `Promise<Blob>` | 不行 |
+| 截圖版本 | `takeScreenshot()`（非同步，不擋主執行緒） | `takeScreenshotSync()`（全程同步） |
+| 作法 | click handler 內同步建好 `ClipboardItem` 並呼叫 `write()`，截圖在背景完成 | click handler 內同步拿到 blob → `File` → `canShare` → `share()`，中間沒有 await |
+
+`share()` 這條若先 `await` 截圖再呼叫，會失去 transient user activation（iOS Safari 尤其嚴格）。`canvas.toDataURL()` 是同步 API，解 base64 自行組 Blob 就能全程同步；代價是編碼會擋住主執行緒（1440×1080 實測約 82 ms，使用者主動觸發，可接受）。
+
+失敗處理：
+
+- 兩條路徑「API 不存在」與「呼叫被拒」都退回下載，並沿用**同一份**截圖結果，不會重截。
+- **例外：使用者在系統分享面板按取消**（`share()` reject `AbortError`）不算失敗，靜靜回到 idle，不補下載檔（否則變成「按了取消卻多一個檔案」）。
+- 下載後瀏覽器／OS 會顯示自己的下載氣泡或分享面板（檔名、複製圖示等），那是原生 UI，頁面無法干預。
 
 ## 手動驗證紀錄
 
@@ -113,10 +188,23 @@ hash 同步（同一個 `useEffect`，依賴 `[stockNo, dataSource, range, indic
 - 調整指標參數：hash 即時更新，`history.length` 不變（確認走 `replaceState`）。
 - `#s=totally-broken-payload!!!`：正常載入、圖表在、顯示「分享連結無法解析…」提示，console 無錯誤。
 - 使用者實測：畫線後複製網址、開新分頁貼上，線條完整還原（位置與顏色）。
-- 分享按鈕的**失敗**分支已在沙盒確認（文件未取得焦點時 clipboard reject → 顯示手動複製提示）；成功分支由使用者在真實瀏覽器點擊確認。
+- 分享URL 按鈕的**失敗**分支已在沙盒確認（文件未取得焦點時 clipboard reject → 顯示手動複製提示）；成功分支由使用者在真實瀏覽器點擊確認。
+
+圖片分享（share3–5，2026-07-23，沙盒 Chromium + `javascript_tool` 白箱取像素，全程 console 無錯誤）：
+
+- **截圖含手繪線**：建 800×600 真 chart + 60 根 K 棒，用 `DrawingController.addLine()` 畫兩條線（`#ff00ff`／`#00ffff`）。`addTopLayer: false` 的截圖就已含兩條線（magenta 3770 px、cyan 4028 px），`addTopLayer: true` 與 `false` 逐像素完全相同。
+- **無準星殘影**：移動十字準星後 `includeCrosshair: false` 的截圖與「準星出現前」逐像素相同；同位置 `includeCrosshair: true` 多出 9219 個不透明像素（確認確實有東西可截）。截圖後 `crosshair.mode` 仍為原值。
+- **補底色**：未補時 1,483,823 / 1,555,200 像素 alpha=0；補後透明像素 0、角落 `rgb(22,23,29)` = `#16171d`。
+- **PNG 產物**：`takeChartScreenshotBlob()` 與 `takeChartScreenshotBlobSync()` 產物一致（皆 120641 bytes、1440×1080、magenta 3516／cyan 3512、透明像素 0、PNG magic 正確）。
+- **複製圖片**：真的 `navigator.clipboard.write()` resolve，`ClipboardItem` 的 `types` 為 `['image/png']`、104822 bytes；解回 bitmap 為 2023×1188、漲色 55139 px／跌色 40149 px。模擬 `ClipboardItem` 不存在、以及 `write()` reject，兩者都退回下載且 `URL.createObjectURL` 只呼叫 1 次（沒有重截）。
+- **分享圖片**五條分支（此沙盒瀏覽器原生**沒有** `navigator.share`／`canShare`，第一列是真實情境，其餘 stub）：原生無 Web Share → 下載；`canShare` 回 false → **不呼叫** `share()`、下載；分享成功 → 提示「已分享圖片」、無下載；`AbortError` → 無下載無錯誤提示；`NotAllowedError` → 下載。`share()` 收到的參數為 `{ title: 'TA Painter 2330', files: [File('ta-painter-2330-20260723.png', image/png)] }`。
+- 使用者實測確認：複製圖片後貼到其他軟體顯示正確。
 
 ## 已知限制 / 尚未實作
 
 - **`range` 沒有 UI**：目前一律是「最近 6 個月」，只是為了讓連結能固定住當初的區間才進 `ShareState`。因此舊分享連結打開時用的是**當初分享的區間**，不會跟著今天往後滾動。
 - **首次查詢失敗時的線條還原**：線條要等 `bars` 到位才補上，若還原當下的查詢失敗，`pendingLinesRef` 會一直留著（見 `project-planning/technical-debt.md`）。
-- 圖片分享（截圖、剪貼簿貼圖、Web Share）屬 share3–5，尚未實作。
+- **Web Share 真機路徑未驗證**：沙盒瀏覽器原生沒有 `navigator.share`／`canShare`，`share()` 成功／取消／被拒三條分支都是用 stub 模擬的。iOS Safari／Android Chrome 上實際叫出系統分享面板、分享到 LINE 尚待真機補測（見 `project-planning/technical-debt.md`）。
+- **同步截圖會擋主執行緒**：`takeChartScreenshotBlobSync()` 在 1440×1080 實測約 82 ms。目前只有「分享圖片」走這條，且是使用者主動觸發，可接受。
+- **截圖底色取頁面 `--bg`，但圖表本身配色寫死深色**：目前沒有主題切換 UI 所以看不出來；日後支援淺色主題時，截圖會變成白底配深色格線（見 `project-planning/technical-debt.md` 的「ChartContainer 圖表配色寫死」）。
+- 下載／分享後的原生 UI（下載氣泡、系統分享面板）不在頁面控制範圍，按鈕文字與選項無法自訂。

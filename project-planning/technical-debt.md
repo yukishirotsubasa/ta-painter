@@ -14,7 +14,8 @@
 - **狀況**：`web/src/index.css` 已用 `prefers-color-scheme` 定義 `--bg`/`--text`/`--border` 等 CSS variable 供 light/dark 兩套配色，但 `ChartContainer.tsx` 的 `createChart` 選項（`layout.textColor`、`grid` 線色）與量能柱漲跌色、各指標線色都是寫死的 hex 常數，不會隨系統主題切換。lightweight-charts 是 canvas 渲染，CSS variable 無法直接套用，需要 JS 端讀取目前主題再呼叫 `chart.applyOptions()`。
 - **~~共用常數重複定義~~（已解，indicator8，2026-07-23）**：漲跌色已抽出至 [`lib/chart/colors.ts`](../web/src/lib/chart/colors.ts)（`UP_COLOR`/`DOWN_COLOR`/`DEFAULT_LINE_COLOR`），`ChartContainer.tsx`（量能柱）與 `macd.ts`（histogram）改共用同一份，不再各自重複定義；布林三軌、MACD DIF/DEA 線色亦改為可調參數（預設沿用 `DEFAULT_LINE_COLOR`/`#ff9800`）。**唯「配色不跟隨系統 light/dark 主題」這部分仍未解**（見下）。
 - **影響**：目前介面沒有主題切換 UI，尚未有可觀察的視覺錯誤；但 responsive/RWD 模組（`responsive1`）或任何未來的主題切換功能上線後，圖表本身（含量能柱與 MACD histogram、各指標線的預設色）會維持深色配色不跟著換，造成視覺不一致。
-- **建議**：實作淺色主題支援時，改用 `window.matchMedia('(prefers-color-scheme: dark)')`（或未來的主題 state）動態算出色票，並在偵測到主題變化時對圖表與各指標的 series 呼叫對應的 `applyOptions()`/重新 `setData()` 更新；共用色票已集中在 `lib/chart/colors.ts`，屆時可直接讓該檔依主題輸出兩套色值。
+- **現況（2026-07-23 更新，share3）**：截圖（`lib/chart/screenshot.ts`）**已經**跟隨主題——`resolvePageBackgroundColor()` 讀 `getComputedStyle(document.documentElement)` 的 `--bg` 來補底色，會隨 `prefers-color-scheme` 變動。這反而讓落差更明顯：淺色主題下截圖會是**白底 + 深色格線 + 深色文字**（圖表內部配色仍寫死），比畫面上看起來更突兀。
+- **建議**：實作淺色主題支援時，改用 `window.matchMedia('(prefers-color-scheme: dark)')`（或未來的主題 state）動態算出色票，並在偵測到主題變化時對圖表與各指標的 series 呼叫對應的 `applyOptions()`/重新 `setData()` 更新；共用色票已集中在 `lib/chart/colors.ts`，屆時可直接讓該檔依主題輸出兩套色值。截圖底色屆時可直接沿用同一份色票，不必再另外讀 CSS variable。
 - **對應任務**：共用常數抽出已由 [indicator8](task-pool/indicator8.md) 完成；主題跟隨系統的部分留 responsive 模組。
 
 ## PaneIndexAllocator 尚未驗證多個 separate-pane 指標同時存在的 index 一致性
@@ -126,7 +127,8 @@
 - **影響**：這些互動細節（尤其 `isComposing` 與 `mousedown`/`blur` 的先後）正是最容易在重構時無聲壞掉的部分，回歸只能靠人工重測。另外沙盒環境的 Browser pane 無法截圖（`Screenshot timed out: the Browser pane is not displayed`），驗證只能靠 `javascript_tool` 讀 DOM，成本比一般手測更高。CDP 合成的 Enter 鍵也不會觸發表單的隱式送出，該路徑是改以 `form.requestSubmit()` 驗證、真實 Enter 由使用者複測確認。
 - **現況（2026-07-23 更新，share2）**：`App.tsx` 新增的兩個 effect（分享線條的延後還原、狀態變動回寫 hash）同樣沒有元件測試涵蓋，純函式部分（`readShareHash`/`formatShareHash`/`toShare*` 轉換、`DrawingController.addLine()`）有 17 例單元測試。這次是用「手工組出含 2 條線的 hash → 在 dev server 上以 `javascript_tool` 讀 DOM 驗證」取代拖曳畫線，繞過了 canvas 互動測不了的限制。另記一個沙盒工具面的坑：Browser pane 對「只有 hash 不同」的網址不會重新載入文件（等同瀏覽器的 fragment 導航），`location.reload()` 實測也會把 hash 丟掉，要驗證「帶 hash 開新頁」必須讓網址在 hash 以外也有差異（例如加 `?r=1`）才會觸發真正的 document 載入。
 - **現況（2026-07-23 更新，sidebar1/2/3）**：缺口再度擴大。側邊欄收合、區塊折疊、資料源切換、清單選取／刪除、折疊自動取消選取等互動同樣沒有元件測試，只有抽出的純函式（`lineSelection`、`lineLabel`、`applySubmittedCode`）有涵蓋。更嚴重的是**畫線相關端到端行為在沙盒內完全無法驗證**：Browser pane 為 hidden，CSS transition 與 rAF 凍結、canvas 不重繪、lightweight-charts 的 `subscribeCrosshairMove` 不觸發（實測對 container 與所有子元素派送合成 `mousedown`/`mousemove`/`mouseup` 都畫不出線），連第二個 pane 的 DOM row 與分隔線都要等實際 paint 才生成。因此「拖曳畫線 → 清單列出 → 點選高亮 → 刪除消失」只能靠使用者人工測。
-- **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
+- **現況（2026-07-23 更新，share4/5）**：`ShareMenu` 的分支邏輯（剪貼簿成功／不支援／被拒、Web Share 成功／`canShare` 回 false／使用者取消／被拒、截圖回 `null` 的失敗路徑）同樣沒有元件測試，純函式部分（`imageShare` 的能力偵測與 `screenshot` 的編碼路徑）有 20 例單元測試。這次是在 dev server 上用 `javascript_tool` 側錄 `clipboard.write`／`canShare`／`share`／`HTMLAnchorElement.prototype.click`／`URL.createObjectURL`，再對每條分支各點一次按鈕來驗證——涵蓋度夠，但每次回歸都得重搭一次側錄，成本高且無法自動重跑。
+- **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`、`ShareMenu` 的 fallback 分支（stub 掉 `imageShare` 的能力偵測即可，不需要真的 canvas）。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
 - **對應任務**：暫無（defer，下次動到元件互動邏輯時一併補）。
 
 ## 股票清單型別在 `scripts/` 與 `src/` 各自宣告一份
@@ -154,6 +156,22 @@
 
 - **來源任務**：[data7](task-pool/data7.md)
 - **決策**：`dataSource.fetchBars()` 對 Yahoo 走單次 `provider.fetchDaily()`（一次取回整段區間），因此不經 `fetchDailyRange()` 的逐月快取與月間節流，重查同一區間仍會實打上游一次。經確認**維持現狀、不做快取回填也不另行處理**：Yahoo 單次查詢成本低，且官方源的近月資料本來就不快取（當月一律視為過期），加快取並不能解決「短時間大量請求」的問題。請求頻率改以**代號送出的 300ms debounce**（`App.tsx` 的 `QUERY_DEBOUNCE_MS` + `lib/stock/selection.ts` 的 `applySubmittedCode`）控制：Enter／下拉選取／查詢鈕連打時只有最後一次真的發出，同代號重送為 no-op。此則關閉、不再追蹤。
+
+## 截圖有同步／非同步兩條產生路徑，`ChartHandle` 也因此有兩個方法
+
+- **來源任務**：[share5](task-pool/share5.md)（2026-07-23）
+- **狀況**：同一張 PNG 有兩條產生路徑——`canvasToPngBlob()`（`toBlob`，非同步）給剪貼簿用，`canvasToPngBlobSync()`（`toDataURL` + 自解 base64，同步）給 Web Share 用；`ChartHandle` 對應曝光 `takeScreenshot()` 與 `takeScreenshotSync()`。這是刻意的：`ClipboardItem` 吃得下 `Promise<Blob>`，所以剪貼簿可以用非同步版不擋主執行緒；`navigator.share()` 不吃 promise 且對 transient user activation 嚴格（iOS Safari 尤其），中間插一個 `await` 就可能被拒，只能全程同步。兩者已實測產物一致（同尺寸、同 byte 數、同像素統計，見 [`docs/share.md`](../docs/share.md)）。
+- **影響**：目前無行為差異，但截圖選項或後處理（例如日後加浮水印、加標題列、改底色策略）要改時得記得改兩處；漏改一處會造成「複製出來的圖」與「分享出去的圖」不一致，而且這種不一致只在其中一條路徑上看得到，不容易發現。
+- **建議**：兩個方向。(1) 若日後實測確認 Safari 對「`await toBlob` 後再 `share()`」其實可接受，就砍掉同步版統一走非同步。(2) 若要保留兩條，把差異縮到只剩最後一步編碼——目前 `takeChartScreenshotCanvas()` 已是共用的前半段（截圖 + 補底色），後處理一律加在那裡，兩個 `canvasToPngBlob*()` 維持「只做編碼」的單一職責即可。目前已符合 (2) 的結構，維護時守住這條界線就好。
+- **對應任務**：暫無（defer，結構已隔離，動到截圖後處理時複查）。
+
+## Web Share 只在 stub 下驗證，真機（iOS Safari／Android Chrome）未測
+
+- **來源任務**：[share5](task-pool/share5.md)（2026-07-23）
+- **狀況**：沙盒的 Chromium 原生**沒有** `navigator.share`／`navigator.canShare`，因此「分享成功」「使用者取消（`AbortError`）」「被拒（`NotAllowedError`）」「`canShare` 回 false」四條分支都是用 stub 模擬驗證的（真實驗到的只有「完全沒有 Web Share → 退回下載」那條）。share5 驗收方式 1（真機叫出系統分享面板、分享到 LINE）尚未執行。
+- **影響**：stub 驗的是**我們的分支邏輯**，驗不到平台行為——最可能出問題的兩點都在 stub 之外：iOS Safari 對 user activation 的實際判定（同步截圖約 82 ms 是否仍在可接受範圍）、以及各家 App 對 `image/png` 檔案分享的支援程度。若真機失敗，症狀會是「按了沒反應」或直接跳下載，使用者不會知道原因。
+- **建議**：真機補測 iOS Safari 與 Android Chrome 各一次，重點看：分享面板是否叫得出來、LINE 是否收得到圖、按取消後是否**沒有**多出下載檔。若 iOS 因 activation 被拒，可考慮改成「先在 idle 時預先截好一張放著、click 時直接用」的預熱策略，或退而求其次讓行動裝置也走下載。
+- **對應任務**：暫無（需實體裝置，defer 至有機會實測時）。
 
 ## 分享連結的線條還原綁在「第一批 bars 到位」，首查失敗後可能把線畫到別支股票上
 

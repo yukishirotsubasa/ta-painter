@@ -12,6 +12,11 @@ import { createPaneIndexAllocator } from '../../lib/chart/paneIndexAllocator';
 import { UP_COLOR, DOWN_COLOR, DEFAULT_DRAWING_LINE_COLOR } from '../../lib/chart/colors';
 import { getIndicator } from '../../lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorMountHandle, PaneIndexAllocator } from '../../lib/chart/indicators/types';
+import {
+  takeChartScreenshotBlob,
+  takeChartScreenshotBlobSync,
+  type ChartScreenshotOptions,
+} from '../../lib/chart/screenshot';
 import { DrawingController, type DrawnLine } from '../../lib/chart/drawing/drawingController';
 import type { TrendLinePoint, TrendLineStyle } from '../../lib/chart/drawing/trendLinePrimitive';
 import type { OhlcvBar } from '../../lib/data/types';
@@ -25,6 +30,13 @@ export interface ChartHandle {
   deleteLine(id: string): void;
   /** share2 的 URL 還原：直接以邏輯座標＋樣式重建線條，回傳新線 id（圖表尚未建立時回傳 `null`）。 */
   addLine(points: readonly [TrendLinePoint, TrendLinePoint], style?: Partial<TrendLineStyle>): string | null;
+  /** share3 的圖片分享來源：目前畫面（含手繪線）的 PNG blob，圖表尚未建立時回傳 `null`。 */
+  takeScreenshot(options?: ChartScreenshotOptions): Promise<Blob | null>;
+  /**
+   * 同上但同步回傳（share5）：`navigator.share()` 不吃 promise 且對 user activation 嚴格，
+   * 需要在 click handler 內一路同步拿到 blob。
+   */
+  takeScreenshotSync(options?: ChartScreenshotOptions): Blob | null;
 }
 
 interface ChartContainerProps {
@@ -199,6 +211,14 @@ export function ChartContainer({
     () => ({
       deleteLine: (id: string) => internalDrawingControllerRef.current?.deleteLine(id),
       addLine: (points, style) => internalDrawingControllerRef.current?.addLine(points, style) ?? null,
+      takeScreenshot: async (options) => {
+        const chart = chartRef.current;
+        return chart ? await takeChartScreenshotBlob(chart, options) : null;
+      },
+      takeScreenshotSync: (options) => {
+        const chart = chartRef.current;
+        return chart ? takeChartScreenshotBlobSync(chart, options) : null;
+      },
     }),
     [],
   );

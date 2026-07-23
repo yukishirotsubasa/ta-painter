@@ -12,8 +12,9 @@ const FEEDBACK_TEXT: Record<Exclude<CopyStatus, 'idle'>, string> = {
 };
 
 /**
- * 分享按鈕（share2）：目前畫面狀態本來就持續同步在網址列的 hash 上，
- * 所以「分享」就只是把目前網址複製到剪貼簿，不需要另外組連結。
+ * 分享 URL 按鈕（share2）：目前畫面狀態本來就持續同步在網址列的 hash 上，
+ * 所以這顆就只是把目前網址複製到剪貼簿，不需要另外組連結。
+ * 按鈕文字帶上「URL」與旁邊的「複製圖片」「分享圖片」區隔，避免只寫「分享」看不出分享的是什麼。
  */
 export function ShareLinkButton() {
   const [status, setStatus] = useState<CopyStatus>('idle');
@@ -37,7 +38,7 @@ export function ShareLinkButton() {
   return (
     <div className="share-link">
       <button type="button" className="share-link-button" onClick={copyCurrentUrl}>
-        分享
+        分享URL
       </button>
       {status !== 'idle' && (
         <span className="share-link-feedback" role="status">
