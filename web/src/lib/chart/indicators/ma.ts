@@ -6,6 +6,8 @@ import {
   type LineSeriesPartialOptions,
 } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
+import { DEFAULT_LINE_COLOR } from '../colors';
+import { PRICE_PANE_INDEX, VOLUME_PANE_INDEX } from '../panes';
 import { registerIndicator } from './registry';
 import {
   numberParam,
@@ -19,8 +21,6 @@ import {
 
 const DEFAULT_PERIOD = 20;
 const DEFAULT_SOURCE = 'close';
-/** lightweight-charts LineSeries 的預設線色，沿用作為 color 參數預設。 */
-const DEFAULT_COLOR = '#2196f3';
 
 /** MA 計算來源，對應 OhlcvBar 的數值欄位。 */
 const SOURCE_OPTIONS: IndicatorParamOption[] = [
@@ -33,13 +33,6 @@ const SOURCE_OPTIONS: IndicatorParamOption[] = [
 
 type MaSource = 'close' | 'open' | 'high' | 'low' | 'volume';
 
-/**
- * pane 0 = 主圖（價格 scale）、pane 1 = 量能（成交量 scale），由 ChartContainer 保留。
- * source=volume 時 MA 數量級與價格差距過大，掛在主圖會撐爆價格 scale，故改掛量能 pane 與量能柱共用 scale。
- */
-const PRICE_PANE_INDEX = 0;
-const VOLUME_PANE_INDEX = 1;
-
 export interface MaPoint {
   time: string;
   value: number;
@@ -50,6 +43,10 @@ function resolveSource(params: IndicatorParamValues): MaSource {
   return SOURCE_OPTIONS.some((option) => option.value === raw) ? (raw as MaSource) : DEFAULT_SOURCE;
 }
 
+/**
+ * source=volume 時 MA 數量級與價格差距過大，掛在主圖會撐爆價格 scale，
+ * 故改掛量能 pane 與量能柱共用 scale。
+ */
 function paneIndexForSource(source: MaSource): number {
   return source === 'volume' ? VOLUME_PANE_INDEX : PRICE_PANE_INDEX;
 }
@@ -90,7 +87,7 @@ function mount(
   const source = resolveSource(params);
   const series: ISeriesApi<'Line'> = chart.addSeries(
     LineSeries,
-    seriesOptionsForSource(source, stringParam(params, 'color', DEFAULT_COLOR)),
+    seriesOptionsForSource(source, stringParam(params, 'color', DEFAULT_LINE_COLOR)),
     paneIndexForSource(source),
   );
   series.setData(toLineData(computeMa(bars, params)));
@@ -98,7 +95,7 @@ function mount(
   return {
     update(nextBars, nextParams) {
       const nextSource = resolveSource(nextParams);
-      series.applyOptions(seriesOptionsForSource(nextSource, stringParam(nextParams, 'color', DEFAULT_COLOR)));
+      series.applyOptions(seriesOptionsForSource(nextSource, stringParam(nextParams, 'color', DEFAULT_LINE_COLOR)));
       const targetPane = paneIndexForSource(nextSource);
       if (series.getPane().paneIndex() !== targetPane) {
         series.moveToPane(targetPane);
@@ -119,7 +116,7 @@ export const MaIndicator: IndicatorDefinition<MaPoint[]> = {
   paramsSchema: [
     { key: 'period', label: '週期', default: DEFAULT_PERIOD, min: 1, max: 240, step: 1 },
     { key: 'source', label: '計算來源', type: 'enum', default: DEFAULT_SOURCE, options: SOURCE_OPTIONS },
-    { key: 'color', label: '線色', type: 'color', default: DEFAULT_COLOR },
+    { key: 'color', label: '線色', type: 'color', default: DEFAULT_LINE_COLOR },
   ],
   compute: computeMa,
   mount,

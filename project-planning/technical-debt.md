@@ -9,7 +9,7 @@
 >
 > 盤點結果：未解 21 則 → 實作 7、延後 1、Skip 6、不處理 6。清單上不應再出現沒有決策標記的未解條目。
 
-## ChartContainer 指標 reconcile 邏輯對每個已掛載實例無條件呼叫 update()，未做變更診斷
+## ~~ChartContainer 指標 reconcile 邏輯對每個已掛載實例無條件呼叫 update()，未做變更診斷~~（已解：indicator11 加變更偵測，2026-07-24）
 
 - **來源任務**：[indicator5](task-pool/indicator5.md)
 - **狀況**：`ChartContainer.tsx` 的指標 reconcile `useEffect`（依賴 `[data, indicators]`）在每次觸發時，對所有已掛載的指標實例都呼叫 `handle.update(data, instance.params)`，不論該實例的 `params` 是否真的變動、或變動的是不是別的實例。這是刻意選擇的簡化實作（避免對 `IndicatorInstance` 做深層比較），目前每個指標的 `compute()` 都是輕量純函式（MA 的簡單移動平均），重複呼叫成本可忽略。
@@ -17,6 +17,7 @@
 - **建議**：若未來觀察到效能問題，可在 `IndicatorInstance` 或 reconcile 邏輯中加入變更偵測（例如比對 `params` 的淺層 diff 或維護 `IndicatorInstance` 的版本號/參考相等性判斷），只對實際變動的實例呼叫 `update()`。
 - **決策（2026-07-23）**：**實作**。雖然目前無可觀察的效能問題，但變更偵測的成本很低（`params` 是扁平 `Record<string, number | string>`，淺層比較即足夠），先做掉可避免未來加入重運算指標時才回頭改動這段共用邏輯。
 - **對應任務**：[indicator11](task-pool/indicator11.md)。
+- **結果（2026-07-24，indicator11）**：reconcile 迴圈抽成 `lib/chart/indicators/reconcile.ts` 的 `reconcileIndicators()`，已掛載的 map 值改為 `MountedIndicator { handle, appliedParams, appliedData }`；只有 `data` 參考變動或該實例 `params` 淺層 diff 有異時才呼叫 `update()`。以 spy 指標定義寫 `reconcile.test.ts` 驗證「兩個指標只改其中一個 → 只更新該指標」「params 內容相同但物件重建 → 不呼叫 `update()`」「`data` 換參考 → 全部更新」。
 
 ## ~~ChartContainer 圖表配色寫死，未跟隨 light/dark 主題~~（已解：chart4 改為整站固定 dark，2026-07-24）
 
@@ -31,7 +32,7 @@
 - **殘留**：CSS 變數與 `colors.ts` 常數是兩份人工同步的色值（canvas 讀不到 CSS variable），見下方「圖表色票與 CSS 變數需人工同步」。
 - **對應任務**：共用常數抽出已由 [indicator8](task-pool/indicator8.md) 完成；固定 dark 主題由 [chart4](task-pool/chart4.md) 完成。
 
-## PaneIndexAllocator 尚未驗證多個 separate-pane 指標同時存在的 index 一致性
+## ~~PaneIndexAllocator 尚未驗證多個 separate-pane 指標同時存在的 index 一致性~~（已解：indicator10 改查 `chart.panes()`，2026-07-24）
 
 - **來源任務**：[indicator4](task-pool/indicator4.md)
 - **狀況**：`createPaneIndexAllocator()`（`lib/chart/paneIndexAllocator.ts`）只是邏輯上的計數器，並未對應 lightweight-charts 實際的 pane 陣列行為——當一個 pane 內最後一個 series 被移除時，lightweight-charts 會自動移除該 pane 並讓後面的 pane index 往前遞補，但 allocator 內部記錄的「已配置 index 集合」不會知道這件事。目前唯一的 separate-pane 指標是 MACD，已驗證「新增 → 移除 → 再新增」單一 MACD 實例時 pane index 分配正確（見 `docs/indicators.md` 手動驗證紀錄），但**尚未驗證兩個以上 separate-pane 指標同時存在、且移除中間那個時**，allocator 記錄的 index 是否仍對應 lightweight-charts 實際的 pane 陣列位置。
@@ -40,6 +41,7 @@
 - **決策（2026-07-23）**：**實作**，且不等到新增第二種 separate-pane 指標——直接改成由 `chart.panes()` 查詢實際 pane 陣列決定 index，allocator 不再自行維護計數器，從根本上消除「獨立計數器與函式庫實際行為可能不一致」這件事。介面與三個指標的 `mount()` 簽章維持不變。
 - **驗證限制**：沙盒環境無法驗證真實 canvas／pane 行為，改以 fake `chart` 物件（`panes()` 回傳長度可變的陣列）做單元測試，另由使用者在真實瀏覽器手測 MACD 的新增／移除。
 - **對應任務**：[indicator10](task-pool/indicator10.md)。
+- **結果（2026-07-24，indicator10）**：`createPaneIndexAllocator(chart, reservedCount)` 的 `allocate()` 改回傳 `Math.max(reservedCount, chart.panes().length)`，不再自維已配置集合，`release()` 保留為 no-op（介面與三個指標的 `mount()` 簽章未動）。`paneIndexAllocator.test.ts` 改用 fake chart（pane 以陣列表示、移除時 index 前移）涵蓋「新增→移除→再新增」與「兩個 separate-pane、移除前面那個」；使用者已在真實瀏覽器手測 MACD 新增／移除／再新增無誤。
 
 ## ~~`ChartToolbar` 輸入框不會跟隨外部 `stockNo` 變化重新同步~~（已解：symbol2 加上同步 `useEffect`，2026-07-23）
 
@@ -110,7 +112,7 @@
 - **結果（2026-07-24，data8）**：新增 `lib/data/errors.ts` 的純函式 `classifyDataError(err)`（`upstream-blocked`／`no-data`／`unknown`，三個 provider 的 `throw` 未動），`App.tsx` 的 `error` state 改帶 `kind`，只在 `upstream-blocked` 時於原始訊息下方追加 `.app-error-hint` 純文字提示。規則與判別順序見 [`docs/data-layer.md`](../docs/data-layer.md#錯誤分類errorstsdata8)。**依決策，週期性健康檢查／告警不做**（cron 對使用者當下的失敗沒有幫助），此則以「使用端即時提示」結案。
 - **殘留（已轉為 `docs/data-layer.md` 的已知限制，不另開任務）**：分類靠錯誤訊息字串比對（`HTTP {status}`／「查詢失敗」字樣），改動 provider 訊息時須同步檢查 `errors.test.ts`。
 
-## MA volume 來源的 pane index 在 `ma.ts` 硬編，與 `ChartContainer` 的 pane 佈局約定重複
+## ~~MA volume 來源的 pane index 在 `ma.ts` 硬編，與 `ChartContainer` 的 pane 佈局約定重複~~（已解：indicator9 抽 `panes.ts`，2026-07-24）
 
 - **來源任務**：[indicator7](task-pool/indicator7.md)（2026-07-23）
 - **狀況**：`ma.ts` 為了讓 `source=volume` 的 MA 掛到量能 pane，直接寫死 `PRICE_PANE_INDEX = 0` / `VOLUME_PANE_INDEX = 1` 兩個常數。這份「pane 0=K 線、pane 1=量能」的知識實際上由 `ChartContainer.tsx` 擁有（`RESERVED_PANE_COUNT = 2` 與建立 candlestick/volume series 的順序決定），`ma.ts` 只是複製了同一份約定，兩邊沒有共用來源。這是刻意的簡化：MA 是 overlay 不走 `paneIndexAllocator`，而 allocator 目前也沒有「查詢保留 pane 語意」的 API。
@@ -118,8 +120,9 @@
 - **建議**：把「保留 pane 的語意 → index」對應集中到單一來源，例如在 `paneIndexAllocator`（或新的 `lib/chart/panes.ts`）曝光 `PRICE_PANE_INDEX`/`VOLUME_PANE_INDEX` 具名常數，讓 `ChartContainer` 與 `ma.ts` 共同引用；或由 `mount()` 透過參數把量能 pane index 傳進來，而非在指標檔案內硬編。
 - **決策（2026-07-23）**：**實作**。抽 `lib/chart/panes.ts` 曝光具名常數供 `ChartContainer.tsx` 與 `ma.ts` 共同引用，成本很低且屬純重構，不必等 pane 佈局真的變動——那時才發現反而是靜默的錯誤 pane 指向。
 - **對應任務**：[indicator9](task-pool/indicator9.md)。
+- **結果（2026-07-24，indicator9）**：新增 `lib/chart/panes.ts` 曝光 `PRICE_PANE_INDEX`/`VOLUME_PANE_INDEX`/`RESERVED_PANE_COUNT`（含註解說明 index 由 `ChartContainer` 建立 series 的順序決定），`ChartContainer.tsx` 與 `ma.ts` 共同引用，兩邊的本地宣告與 `addSeries()` 的 0/1 字面值皆已移除。
 
-## `ma.ts` 仍保留自己的 `DEFAULT_COLOR`，未併入共用 `colors.ts`
+## ~~`ma.ts` 仍保留自己的 `DEFAULT_COLOR`，未併入共用 `colors.ts`~~（已解：indicator9 改 import `DEFAULT_LINE_COLOR`，2026-07-24）
 
 - **來源任務**：[indicator8](task-pool/indicator8.md)（2026-07-23）
 - **狀況**：indicator8 抽出 `lib/chart/colors.ts` 的 `DEFAULT_LINE_COLOR = '#2196f3'` 供布林/MACD 線色參數預設值使用，但 `ma.ts` 仍沿用自己既有的 `const DEFAULT_COLOR = '#2196f3'`（indicator7 留下），未改成 import `DEFAULT_LINE_COLOR`。這是刻意不擴大 scope 的取捨——indicator8 驗收只要求 `ChartContainer.tsx` 與 `macd.ts` 不重複定義，`ma.ts` 屬剛完成的 indicator7 檔案，為避免動到已測過的行為而未一併整併。
@@ -127,6 +130,7 @@
 - **建議**：下次動到 `ma.ts` 時，把 `DEFAULT_COLOR` 改成 `import { DEFAULT_LINE_COLOR } from '../colors'`，讓三個指標共用單一預設線色來源。
 - **決策（2026-07-23）**：**實作**。一行 `import` 的改動，與同樣動到 `ma.ts` 的 pane index 整併合併為同一個任務一次做完。
 - **對應任務**：[indicator9](task-pool/indicator9.md)。
+- **結果（2026-07-24，indicator9）**：`ma.ts` 刪除本地 `DEFAULT_COLOR`，`mount()`／`update()`／參數 schema 預設值三處改用 `colors.ts` 的 `DEFAULT_LINE_COLOR`，MA 與布林／MACD 共用單一預設線色來源。
 
 ## 圖表色票與 CSS 變數需人工同步（`CHART_TEXT_COLOR`／`CHART_GRID_COLOR` vs `--text`／`--border`）
 

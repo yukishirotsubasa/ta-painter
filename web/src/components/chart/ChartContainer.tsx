@@ -16,8 +16,9 @@ import {
   CHART_TEXT_COLOR,
   CHART_GRID_COLOR,
 } from '../../lib/chart/colors';
-import { getIndicator } from '../../lib/chart/indicators/registry';
-import type { IndicatorInstance, IndicatorMountHandle, PaneIndexAllocator } from '../../lib/chart/indicators/types';
+import { PRICE_PANE_INDEX, VOLUME_PANE_INDEX, RESERVED_PANE_COUNT } from '../../lib/chart/panes';
+import { reconcileIndicators, type MountedIndicator } from '../../lib/chart/indicators/reconcile';
+import type { IndicatorInstance, PaneIndexAllocator } from '../../lib/chart/indicators/types';
 import {
   takeChartScreenshotBlob,
   takeChartScreenshotBlobSync,
@@ -66,9 +67,6 @@ interface ChartContainerProps {
   highlightedLineId?: string | null;
 }
 
-/** pane 0 = K 線、pane 1 = 量能，指標的 separate-pane 配置從 pane 2 開始。 */
-const RESERVED_PANE_COUNT = 2;
-
 const VOLUME_PANE_HEIGHT = 120;
 
 function toCandlestickData(bars: OhlcvBar[]): CandlestickData[] {
@@ -104,7 +102,7 @@ export function ChartContainer({
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const paneIndexAllocatorRef = useRef<PaneIndexAllocator | null>(null);
-  const mountedIndicatorsRef = useRef<Map<string, IndicatorMountHandle>>(new Map());
+  const mountedIndicatorsRef = useRef<Map<string, MountedIndicator>>(new Map());
   const internalDrawingControllerRef = useRef<DrawingController | null>(null);
 
   useEffect(() => {
@@ -135,14 +133,14 @@ export function ChartContainer({
     });
 
     chartRef.current = chart;
-    paneIndexAllocatorRef.current = createPaneIndexAllocator(RESERVED_PANE_COUNT);
-    candlestickSeriesRef.current = chart.addSeries(CandlestickSeries, {}, 0);
+    paneIndexAllocatorRef.current = createPaneIndexAllocator(chart, RESERVED_PANE_COUNT);
+    candlestickSeriesRef.current = chart.addSeries(CandlestickSeries, {}, PRICE_PANE_INDEX);
     volumeSeriesRef.current = chart.addSeries(
       HistogramSeries,
       { priceFormat: { type: 'volume' } },
-      1,
+      VOLUME_PANE_INDEX,
     );
-    chart.panes()[1]?.setHeight(VOLUME_PANE_HEIGHT);
+    chart.panes()[VOLUME_PANE_INDEX]?.setHeight(VOLUME_PANE_HEIGHT);
     const drawingController = new DrawingController({
       chart,
       series: candlestickSeriesRef.current,
@@ -158,8 +156,8 @@ export function ChartContainer({
 
     return () => {
       resizeObserver.disconnect();
-      for (const handle of mountedIndicators.values()) {
-        handle.dispose();
+      for (const entry of mountedIndicators.values()) {
+        entry.handle.dispose();
       }
       mountedIndicators.clear();
       drawingController.dispose();
@@ -182,27 +180,13 @@ export function ChartContainer({
     const paneIndexAllocator = paneIndexAllocatorRef.current;
     if (!chart || !paneIndexAllocator) return;
 
-    const mounted = mountedIndicatorsRef.current;
-    const currentIds = new Set(indicators.map((instance) => instance.id));
-
-    for (const [id, handle] of mounted) {
-      if (!currentIds.has(id)) {
-        handle.dispose();
-        mounted.delete(id);
-      }
-    }
-
-    for (const instance of indicators) {
-      const definition = getIndicator(instance.definitionId);
-      if (!definition) continue;
-
-      const existing = mounted.get(instance.id);
-      if (existing) {
-        existing.update(data, instance.params);
-      } else {
-        mounted.set(instance.id, definition.mount(chart, paneIndexAllocator, data, instance.params));
-      }
-    }
+    reconcileIndicators({
+      chart,
+      paneIndexAllocator,
+      data,
+      instances: indicators,
+      mounted: mountedIndicatorsRef.current,
+    });
   }, [data, indicators]);
 
   useEffect(() => {

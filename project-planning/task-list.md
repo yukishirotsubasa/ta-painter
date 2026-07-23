@@ -7,7 +7,6 @@
 ## Suggested Implementation Order
 
 ```text
-indicator9 -> indicator10 -> indicator11
 ci2
 ```
 
@@ -47,13 +46,13 @@ ci2
 
 ### indicator Module
 
-技術指標可擴充架構：參數型別化、來源/顏色可調、共用常數與 reconcile 效率。
+技術指標可擴充架構：參數型別化、來源/顏色可調、共用常數與 reconcile 效率。（本模組任務皆已完成。）
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [indicator9](task-pool/indicator9.md) | 等待 | Low | - | 指標共用常數單一來源：新增 `lib/chart/panes.ts`（`PRICE_PANE_INDEX`/`VOLUME_PANE_INDEX`/`RESERVED_PANE_COUNT`）供 `ChartContainer` 與 `ma.ts` 共用；`ma.ts` 的 `DEFAULT_COLOR` 改 import `colors.ts` 的 `DEFAULT_LINE_COLOR`。純重構 |
-| [indicator10](task-pool/indicator10.md) | 等待 | Low | indicator9 | separate-pane index 改由 `chart.panes()` 實際查詢決定，allocator 不再自維計數器；測試改用 fake `chart` 涵蓋「移除中間 pane」情境 |
-| [indicator11](task-pool/indicator11.md) | 等待 | Low | indicator9 | 指標 reconcile 加變更偵測：記下上次套用的 `params`/`data` 參考，只對實際變動的實例呼叫 `update()` |
+| [indicator9](task-pool/indicator9.md) | 完成 | Low | - | 指標共用常數單一來源：新增 `lib/chart/panes.ts`（`PRICE_PANE_INDEX`/`VOLUME_PANE_INDEX`/`RESERVED_PANE_COUNT`）供 `ChartContainer` 與 `ma.ts` 共用；`ma.ts` 的 `DEFAULT_COLOR` 改 import `colors.ts` 的 `DEFAULT_LINE_COLOR`。純重構 |
+| [indicator10](task-pool/indicator10.md) | 完成 | Low | indicator9 | separate-pane index 改由 `chart.panes()` 實際查詢決定，allocator 不再自維計數器；測試改用 fake `chart` 涵蓋「移除中間 pane」情境 |
+| [indicator11](task-pool/indicator11.md) | 完成 | Low | indicator9 | 指標 reconcile 加變更偵測：記下上次套用的 `params`/`data` 參考，只對實際變動的實例呼叫 `update()` |
 
 ### drawing Module
 

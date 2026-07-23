@@ -82,16 +82,30 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 
 ## `PaneIndexAllocator` 實作（`lib/chart/paneIndexAllocator.ts`）
 
-`createPaneIndexAllocator(reservedCount)` 回傳的實例從 `reservedCount` 開始配置遞增的 pane index，`release(index)` 釋放後該 index 可被下一次 `allocate()` 重用（找最小的未配置 index）。`ChartContainer.tsx` 用 `RESERVED_PANE_COUNT = 2`（pane 0 = K 線、pane 1 = 量能）建立唯一一個 allocator 實例，供 separate-pane 指標（目前為 MACD）共用。
+`createPaneIndexAllocator(chart, reservedCount)` 回傳的實例，`allocate()` 一律回傳 `Math.max(reservedCount, chart.panes().length)`——也就是**圖表目前實際的 pane 數量**，不自維「已配置 index 集合」（indicator10）。`ChartContainer.tsx` 以 `chart` 與 `RESERVED_PANE_COUNT`（見下方 `panes.ts`）建立唯一一個 allocator 實例，供 separate-pane 指標（目前為 MACD）共用。
 
-**已知限制**：這個 allocator 只是邏輯上的計數器，並未對應 lightweight-charts 實際的 pane 陣列行為——當一個 pane 內最後一個 series 被移除時，lightweight-charts 會自動移除該 pane 並讓後面的 pane index 往前遞補。目前只驗證過「單一 separate-pane 指標（MACD）新增/移除/再新增」的情境（見 `macd.ts` 章節的手動驗證紀錄），尚未驗證**多個** separate-pane 指標同時存在、且中間那個被移除時，allocator 記錄的 index 與 lightweight-charts 實際 pane 陣列是否仍保持一致（目前只有 MACD 一種 separate-pane 指標，尚無法測試這個多指標情境）。
+`chart` 參數的型別是本檔自訂的最小介面 `PaneCountSource { panes(): readonly unknown[] }`（`IChartApi` 直接滿足），測試才能餵 fake chart。
+
+**為什麼查 `chart.panes()` 而不是自己算**：lightweight-charts 在某個 pane 的最後一個 series 被移除時會自動刪掉該 pane，後面的 pane index 往前遞補。自維計數器不會知道這件事，兩個 separate-pane 指標同時存在、移除前面那個時就會與實際位置對不上（allocator 以為下一個是 4，實際上該配 3）。改查實際數量後這個不一致從根本消失，`release(paneIndex)` 也就沒有東西要清——保留為 no-op 只是為了不動 `PaneIndexAllocator` 介面與三個指標的 `mount()` 簽章（`macd.ts` 的 `dispose()` 仍會呼叫它）。
+
+`paneIndexAllocator.test.ts` 用 fake chart（pane 以字串陣列表示，移除時 `splice` 模擬 index 前移）涵蓋「新增 → 移除 → 再新增」與「兩個 separate-pane 同時存在、移除前面那個」；真實瀏覽器則手測過 MACD 的新增／移除／再新增。
+
+## 保留 pane 佈局（`lib/chart/panes.ts`）
+
+pane index 的單一來源（indicator9），`ChartContainer.tsx` 與 `ma.ts` 共同引用，兩邊不再各自宣告：
+
+- `PRICE_PANE_INDEX = 0`：K 線主圖。
+- `VOLUME_PANE_INDEX = 1`：量能柱；`source=volume` 的指標掛在此以共用成交量 scale。
+- `RESERVED_PANE_COUNT = 2`：separate-pane 指標的起始 index，傳給 `createPaneIndexAllocator()`。
+
+這些值由 `ChartContainer` 建立 series 的順序決定（先 candlestick、再 volume histogram），改動順序時要一起改本檔。
 
 ## 共用色票（`lib/chart/colors.ts`）
 
 集中圖表用色，避免各檔案重複寫死相同色值（indicator8）：
 
 - `UP_COLOR = '#26a69a'` / `DOWN_COLOR = '#ef5350'`：漲跌色，`ChartContainer.tsx` 的量能柱與 `macd.ts` 的 histogram 共用同一份（原本兩處各自定義相同色值，現統一由此匯入）。
-- `DEFAULT_LINE_COLOR = '#2196f3'`：lightweight-charts `LineSeries` 的原生預設線色，作為布林通道三軌與 MACD DIF 線色參數的預設值（未調整時外觀與改動前一致）。
+- `DEFAULT_LINE_COLOR = '#2196f3'`：lightweight-charts `LineSeries` 的原生預設線色，作為 MA、布林通道三軌與 MACD DIF 線色參數的預設值（未調整時外觀與改動前一致）。`ma.ts` 原本自留一份同值的 `DEFAULT_COLOR`，indicator9 已改為引用本常數。
 - `DEFAULT_DRAWING_LINE_COLOR = '#f5a623'`：手繪趨勢線的預設色（drawing7），詳見 [`drawing.md`](drawing.md)。
 - `CHART_TEXT_COLOR = '#9ca3af'` / `CHART_GRID_COLOR = '#2e303a'`（chart4）：`ChartContainer.tsx` 建立圖表時的 `layout.textColor` 與 `grid.vertLines/horzLines.color`，取代原本寫死的 hex。值對齊 `index.css` `:root` 的 `--text`／`--border`。
 
@@ -100,8 +114,6 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 `index.css` 的 `:root` 直接採用深色值、`color-scheme: dark`，**沒有** `prefers-color-scheme` 分支也沒有主題切換 UI；`index.html` 的 `<meta name="theme-color" content="#16171d">` 讓行動版瀏覽器 chrome 一併深色。動機是分享情境——同一張圖／同一條連結會在別人的裝置上開啟，`screenshot.ts` 的底色取自頁面 `--bg`，若跟隨系統主題，淺色使用者會截出白底配深色格線的圖。固定深色後截圖結果恆定。
 
 因為 lightweight-charts 走 canvas 渲染、讀不到 CSS variable，上述兩個常數與 CSS 變數是**兩份人工同步的色值**，改一邊要記得改另一邊（兩處皆有註解），已記於 [`technical-debt.md`](../project-planning/technical-debt.md)。
-
-> `ma.ts` 仍保留自己的 `DEFAULT_COLOR = '#2196f3'`（值等同 `DEFAULT_LINE_COLOR` 但未併入本檔），這是 indicator8 刻意不擴大 scope 的取捨，已記於 `project-planning/technical-debt.md`。
 
 ## MA 指標（`ma.ts`）
 
@@ -112,7 +124,7 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 - `compute(bars, params)`：對 `params.source` 指定的欄位算簡單移動平均（`resolveSource()` 讀取並驗證，非合法值回退 `close`）。實作方式是對每個索引 `i >= period - 1` 取 `bars[i-period+1 ..= i]` 這個視窗算平均——**資料不足 period 天的時間點不會輸出資料點**（不是輸出 `NaN`），所以回傳陣列長度會比 `bars` 短。
 - `mount()`：依 `source` 決定掛載的 pane——
   - **價格類來源**（close/open/high/low）掛在主圖 pane 0，用預設 `price` 數字格式。
-  - **volume 來源**掛在量能 pane 1（`VOLUME_PANE_INDEX`），與量能柱共用同一個成交量 price scale 並用 `volume` 數字格式。這是必要的：volume 的 MA 數量級（十萬～百萬）遠大於股價，若仍疊在主圖 pane 0 會撐爆價格 scale 把 K 線壓成一條線；掛到量能 pane 後可直接與量能柱對照趨勢。pane 0/1 由 `ChartContainer` 的 `RESERVED_PANE_COUNT = 2` 保留，MA 直接引用這個約定的常數（不經 `paneIndexAllocator`，MA 仍是 overlay）。
+  - **volume 來源**掛在量能 pane 1（`VOLUME_PANE_INDEX`），與量能柱共用同一個成交量 price scale 並用 `volume` 數字格式。這是必要的：volume 的 MA 數量級（十萬～百萬）遠大於股價，若仍疊在主圖 pane 0 會撐爆價格 scale 把 K 線壓成一條線；掛到量能 pane 後可直接與量能柱對照趨勢。pane 0/1 的常數由 `lib/chart/panes.ts` 統一提供（`PRICE_PANE_INDEX`/`VOLUME_PANE_INDEX`），`ma.ts` 與 `ChartContainer.tsx` 共同引用（MA 仍是 overlay，不經 `paneIndexAllocator`）。
   - `addSeries()` 時套 `seriesOptionsForSource(source, color)`（`{ color, priceFormat }`）。`update()` 重新套用 color/priceFormat 與重算 `setData()`；若 `source` 在價格↔volume 之間切換導致目標 pane 改變，用 `series.getPane().paneIndex()` 比對後才呼叫 `series.moveToPane()`（相同 pane 不搬移）。`dispose()` 對應 `chart.removeSeries()`。
 - 多條 MA 各為獨立 `IndicatorInstance`，可各設不同 `period`/`source`/`color` 互不干擾。
 - 數值正確性已用真實 TWSE 公開數字交叉驗證過（見 `ma.test.ts`，取自 `twseProvider.test.ts` 的 2330 真實收盤價算 MA5 比對）；另有測試涵蓋 volume 來源計算、`source` 未知值回退 close、pane 配置（price→0、volume→1）與 source 切換時的 `moveToPane`、以及 `color` 套用（mount 與 update）。
@@ -154,7 +166,9 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 實際狀態管理與 chart 掛載邏輯在別處：
 
 - `App.tsx` 用 `useState<IndicatorInstance[]>` 管理實例陣列，`addIndicator()`（用 `crypto.randomUUID()` 產生實例 id、依 `paramsSchema` 的 `default` 值初始化參數）、`removeIndicator()`、`updateIndicatorParams()` 三個函式對應 `IndicatorPanel` 的三個 callback，並把 `indicators` 陣列與 `bars` 一起傳給 `<ChartContainer>`。初始值來自 URL 分享連結（share2，見 [share.md](share.md)）：有 `#s=` 時以還原出的指標開場，實例 id 一律重新產生（uuid 不進分享連結）。
-- `ChartContainer.tsx` 新增了 `indicators` prop，內部用一個 `useEffect`（依賴 `[data, indicators]`）做 reconcile：比對目前 `indicators` 的 id 集合與已掛載（`mountedIndicatorsRef` 這個 `Map<instanceId, IndicatorMountHandle>`）的差異——不在集合中的呼叫 `dispose()` 並從 map 移除；在集合中的若已掛載就呼叫 `update(data, instance.params)`，未掛載則呼叫 `definition.mount()` 並存入 map。**這個 effect 對所有仍掛載的實例都無條件呼叫 `update()`，沒有做「這個實例的 params 到底有沒有變」的診斷**（已記錄在 `project-planning/technical-debt.md`）。
+- `ChartContainer.tsx` 有 `indicators` prop，內部一個 `useEffect`（依賴 `[data, indicators]`）把工作全部交給 `lib/chart/indicators/reconcile.ts` 的 `reconcileIndicators({ chart, paneIndexAllocator, data, instances, mounted })`（indicator11 抽出，元件本身不再有 reconcile 邏輯）。`mounted` 是 `mountedIndicatorsRef` 持有的 `Map<instanceId, MountedIndicator>`，會被就地增刪改。
+- `reconcileIndicators()` 的三段行為：不在 `instances` id 集合中的呼叫 `handle.dispose()` 並從 map 移除；未掛載的呼叫 `definition.mount()` 存入 map；已掛載的**只在 `data` 參考變動或 `params` 淺層 diff 有異時**才呼叫 `update()`，否則整個跳過（避免調整單一指標參數連帶重算重繪其他指標）。`definitionId` 查不到定義的實例直接忽略。
+- `MountedIndicator` 除了 `handle` 還記著 `appliedParams`／`appliedData`——上次真正套用進圖表的參考，即為變更偵測的比較基準。`params` 是扁平的 `Record<string, number | string>`（indicator6 起），故比較是鍵數相同 + 每個鍵 `Object.is()` 相等，不做深層 diff。
 - 元件卸載（chart 被移除）時，所有已掛載指標的 `dispose()` 都會被呼叫，確保不留下孤兒 series。
 
 ## 手動驗證紀錄
@@ -168,7 +182,7 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 - 把布林通道的週期改成 10，輸入框即時反映新值。
 - 移除布林通道實例，`IndicatorPanel` 清單正確消失。
 - 新增一個 MACD 實例，正確顯示「快線/慢線/訊號線週期」三個輸入框（預設 12/26/9）。
-- 移除 MACD 實例後（釋放 pane index），再新增一次 MACD，正常掛載不衝突。
+- 移除 MACD 實例後（pane 被 lightweight-charts 回收），再新增一次 MACD，正常掛載不衝突（indicator10 改為查 `chart.panes()` 後於 2026-07-24 重測，pane 位置與高度正常、無空白 pane）。
 - 同時啟用 MA + 布林通道 + MACD 三種指標，三者並存、互不影響（[indicator5](../project-planning/task-pool/indicator5.md) 驗收方式第 1 點）。
 - 在上述基礎上再新增第二個 MA 實例（週期改成 5），與原本的 MA20 互不干擾共存（indicator5 驗收方式第 2 點）。
 - 移除其中的布林通道實例，只有它消失，其餘 MA20/MACD/MA5 三個維持正常顯示（indicator5 驗收方式第 3 點）。
@@ -177,4 +191,4 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 ## 已知限制 / 尚未實作
 
 - 因為 sandbox 網路限制，MA／布林通道／MACD 疊加到圖表上的**視覺效果**未經肉眼確認，只驗證過互動邏輯（見上）與 `compute()` 數值正確性。MA 的 `source`/`color`/pane 配置（含 volume 掛到量能 pane、source 切換時 `moveToPane`）、布林三軌線色、MACD `difColor`/`deaColor` 與 histogram 共用色票，亦僅以 fake-chart 單元測試驗證契約，未經真實瀏覽器肉眼確認渲染效果。
-- `PaneIndexAllocator` 尚未驗證「多個 separate-pane 指標同時存在」的情境（見上方章節說明），因為目前只有 MACD 一種 separate-pane 指標。
+- 「多個 separate-pane 指標同時存在、移除前面那個」的情境只有 fake-chart 單元測試涵蓋（indicator10），真實瀏覽器仍無法實測——目前只有 MACD 一種 separate-pane 指標。
