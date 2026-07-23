@@ -92,6 +92,14 @@ clearIndicators(): void  // 僅測試用，清空整個 registry
 
 - `UP_COLOR = '#26a69a'` / `DOWN_COLOR = '#ef5350'`：漲跌色，`ChartContainer.tsx` 的量能柱與 `macd.ts` 的 histogram 共用同一份（原本兩處各自定義相同色值，現統一由此匯入）。
 - `DEFAULT_LINE_COLOR = '#2196f3'`：lightweight-charts `LineSeries` 的原生預設線色，作為布林通道三軌與 MACD DIF 線色參數的預設值（未調整時外觀與改動前一致）。
+- `DEFAULT_DRAWING_LINE_COLOR = '#f5a623'`：手繪趨勢線的預設色（drawing7），詳見 [`drawing.md`](drawing.md)。
+- `CHART_TEXT_COLOR = '#9ca3af'` / `CHART_GRID_COLOR = '#2e303a'`（chart4）：`ChartContainer.tsx` 建立圖表時的 `layout.textColor` 與 `grid.vertLines/horzLines.color`，取代原本寫死的 hex。值對齊 `index.css` `:root` 的 `--text`／`--border`。
+
+### 整站固定 dark（chart4）
+
+`index.css` 的 `:root` 直接採用深色值、`color-scheme: dark`，**沒有** `prefers-color-scheme` 分支也沒有主題切換 UI；`index.html` 的 `<meta name="theme-color" content="#16171d">` 讓行動版瀏覽器 chrome 一併深色。動機是分享情境——同一張圖／同一條連結會在別人的裝置上開啟，`screenshot.ts` 的底色取自頁面 `--bg`，若跟隨系統主題，淺色使用者會截出白底配深色格線的圖。固定深色後截圖結果恆定。
+
+因為 lightweight-charts 走 canvas 渲染、讀不到 CSS variable，上述兩個常數與 CSS 變數是**兩份人工同步的色值**，改一邊要記得改另一邊（兩處皆有註解），已記於 [`technical-debt.md`](../project-planning/technical-debt.md)。
 
 > `ma.ts` 仍保留自己的 `DEFAULT_COLOR = '#2196f3'`（值等同 `DEFAULT_LINE_COLOR` 但未併入本檔），這是 indicator8 刻意不擴大 scope 的取捨，已記於 `project-planning/technical-debt.md`。
 

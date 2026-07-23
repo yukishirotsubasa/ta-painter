@@ -18,7 +18,7 @@
 - **決策（2026-07-23）**：**實作**。雖然目前無可觀察的效能問題，但變更偵測的成本很低（`params` 是扁平 `Record<string, number | string>`，淺層比較即足夠），先做掉可避免未來加入重運算指標時才回頭改動這段共用邏輯。
 - **對應任務**：[indicator11](task-pool/indicator11.md)。
 
-## ChartContainer 圖表配色寫死，未跟隨 light/dark 主題
+## ~~ChartContainer 圖表配色寫死，未跟隨 light/dark 主題~~（已解：chart4 改為整站固定 dark，2026-07-24）
 
 - **來源任務**：[chart1](task-pool/chart1.md) / [chart2](task-pool/chart2.md)
 - **狀況**：`web/src/index.css` 已用 `prefers-color-scheme` 定義 `--bg`/`--text`/`--border` 等 CSS variable 供 light/dark 兩套配色，但 `ChartContainer.tsx` 的 `createChart` 選項（`layout.textColor`、`grid` 線色）與量能柱漲跌色、各指標線色都是寫死的 hex 常數，不會隨系統主題切換。lightweight-charts 是 canvas 渲染，CSS variable 無法直接套用，需要 JS 端讀取目前主題再呼叫 `chart.applyOptions()`。
@@ -27,8 +27,9 @@
 - **現況（2026-07-23 更新，share3）**：截圖（`lib/chart/screenshot.ts`）**已經**跟隨主題——`resolvePageBackgroundColor()` 讀 `getComputedStyle(document.documentElement)` 的 `--bg` 來補底色，會隨 `prefers-color-scheme` 變動。這反而讓落差更明顯：淺色主題下截圖會是**白底 + 深色格線 + 深色文字**（圖表內部配色仍寫死），比畫面上看起來更突兀。
 - **決策（2026-07-23）**：**實作，但方向改為「整站固定 dark」而非「跟隨系統主題」**。理由是分享情境——同一張圖或同一條連結會在不同人的裝置上開啟，若配色隨各自的系統主題變動，會造成「同一份內容看起來不一樣」甚至難以瀏覽。固定深色後，圖表原本寫死的深色配色反而變成正確值，只需把色值搬進 `colors.ts` 去重即可。
 - **原方向（已放棄）**：用 `window.matchMedia('(prefers-color-scheme: dark)')` 動態算色票、主題變化時對圖表與各指標 series 呼叫 `applyOptions()`／重新 `setData()`，並讓 `lib/chart/colors.ts` 依主題輸出兩套色值。**不做**，連帶也不做主題切換 UI。
-- **實際做法**：`index.css` 把 `@media (prefers-color-scheme: dark)` 的變數值寫進 `:root` 並刪掉該 media query、`color-scheme` 改 `dark`；`colors.ts` 新增 `CHART_TEXT_COLOR`/`CHART_GRID_COLOR` 供 `ChartContainer.tsx` 引用；`index.html` 加 `theme-color`。`screenshot.ts` 的 `resolvePageBackgroundColor()` 不動——`--bg` 固定後其結果自然恆定。
-- **對應任務**：共用常數抽出已由 [indicator8](task-pool/indicator8.md) 完成；固定 dark 主題由 [chart4](task-pool/chart4.md) 處理。
+- **實際做法（已完成，chart4，2026-07-24）**：`index.css` 把 `@media (prefers-color-scheme: dark)` 的變數值寫進 `:root` 並刪掉該 media query（順帶清掉專案未使用的 `#social .button-icon`）、`color-scheme` 改 `dark`；`colors.ts` 新增 `CHART_TEXT_COLOR = '#9ca3af'`/`CHART_GRID_COLOR = '#2e303a'` 供 `ChartContainer.tsx` 引用，該檔已無寫死顏色 hex；`index.html` 加 `<meta name="theme-color" content="#16171d">`。`screenshot.ts` 的 `resolvePageBackgroundColor()` 不動——`--bg` 固定後其結果自然恆定。
+- **殘留**：CSS 變數與 `colors.ts` 常數是兩份人工同步的色值（canvas 讀不到 CSS variable），見下方「圖表色票與 CSS 變數需人工同步」。
+- **對應任務**：共用常數抽出已由 [indicator8](task-pool/indicator8.md) 完成；固定 dark 主題由 [chart4](task-pool/chart4.md) 完成。
 
 ## PaneIndexAllocator 尚未驗證多個 separate-pane 指標同時存在的 index 一致性
 
@@ -124,6 +125,14 @@
 - **建議**：下次動到 `ma.ts` 時，把 `DEFAULT_COLOR` 改成 `import { DEFAULT_LINE_COLOR } from '../colors'`，讓三個指標共用單一預設線色來源。
 - **決策（2026-07-23）**：**實作**。一行 `import` 的改動，與同樣動到 `ma.ts` 的 pane index 整併合併為同一個任務一次做完。
 - **對應任務**：[indicator9](task-pool/indicator9.md)。
+
+## 圖表色票與 CSS 變數需人工同步（`CHART_TEXT_COLOR`／`CHART_GRID_COLOR` vs `--text`／`--border`）
+
+- **來源任務**：[chart4](task-pool/chart4.md)（2026-07-24）
+- **狀況**：chart4 把圖表座標文字色／格線色從 `ChartContainer.tsx` 的寫死 hex 搬到 `colors.ts` 的 `CHART_TEXT_COLOR = '#9ca3af'`／`CHART_GRID_COLOR = '#2e303a'`，但這兩個值與 `index.css` `:root` 的 `--text`／`--border` 是**兩份各自維護的相同色值**。根因是 lightweight-charts 以 canvas 渲染，讀不到 CSS variable；兩邊已互相加註解提醒要一起改。
+- **影響**：目前值一致，無可觀察問題。日後調整整站文字／邊框色若只改 CSS，圖表座標文字與格線會留在舊色，造成頁面與 canvas 配色脫節（分享圖片同樣受影響）。
+- **建議**：若之後真的常動色票，可在 `ChartContainer` mount 時用 `getComputedStyle(document.documentElement).getPropertyValue('--text')` 取值傳給 `createChart`，讓 CSS 成為單一來源；固定 dark 主題下沒有動態更新需求，讀一次即可。目前兩個值都是常態不變的，先不做。
+- **決策（2026-07-24）**：**Skip**。等到實際需要改色票或引入主題切換時再回頭處理。
 
 ## 股票清單的有效性 gate 只擋「整份為空」，單一分類／單一來源縮水會靜默通過
 

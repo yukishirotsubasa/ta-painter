@@ -214,4 +214,4 @@ interface AppLayoutProps {
 - **斷點常數在 JS 與 CSS 各寫一份**，且邊界重疊（`index.css` 的 `@media (max-width: 1024px)` 與 `useResponsive` 的 `min-width: 1024px` 在**正好 1024px** 時會同時成立），見 [`technical-debt.md`](../project-planning/technical-debt.md)。
 - **設定面板沒有 Esc 關閉與焦點管理**（刻意做成非模態，見 [`technical-debt.md`](../project-planning/technical-debt.md)）。
 - **觸控手勢與 44px 觸控目標已實作（responsive3），但只有沙盒 DOM 量測與單元測試背書**：真機（iOS Safari / Android Chrome）的手感驗收尚未執行，見 [`technical-debt.md`](../project-planning/technical-debt.md)。
-- 圖表本身的配色仍寫死、不跟隨 light/dark 主題（既有技術債，responsive 模組未處理）。
+- **不支援 light 主題**：chart4 起整站固定 dark（`index.css` 無 `prefers-color-scheme` 分支、`color-scheme: dark`），系統切淺色時頁面與圖表仍為深色，也沒有主題切換 UI。理由與細節見 [`indicators.md`](indicators.md#整站固定-darkchart4)。

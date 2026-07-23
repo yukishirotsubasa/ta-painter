@@ -7,7 +7,7 @@
 ## Suggested Implementation Order
 
 ```text
-chart4 -> data8 -> share6
+data8 -> share6
 indicator9 -> indicator10 -> indicator11
 ci2
 ```
@@ -37,7 +37,7 @@ ci2
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
-| [chart4](task-pool/chart4.md) | 等待 | Medium | - | 整站固定 dark 主題：`index.css` 移除 `prefers-color-scheme` light 分支、`color-scheme: dark`；圖表 `layout.textColor`/`grid` 色改引用 `colors.ts` 新增的 `CHART_TEXT_COLOR`/`CHART_GRID_COLOR`；`index.html` 加 `theme-color`。不做主題切換 UI |
+| [chart4](task-pool/chart4.md) | 完成 | Medium | - | 整站固定 dark 主題：`index.css` 移除 `prefers-color-scheme` light 分支、`color-scheme: dark`；圖表 `layout.textColor`/`grid` 色改引用 `colors.ts` 新增的 `CHART_TEXT_COLOR`/`CHART_GRID_COLOR`；`index.html` 加 `theme-color`。不做主題切換 UI |
 
 ### symbol Module
 

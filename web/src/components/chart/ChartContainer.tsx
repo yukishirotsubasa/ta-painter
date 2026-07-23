@@ -9,7 +9,13 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts';
 import { createPaneIndexAllocator } from '../../lib/chart/paneIndexAllocator';
-import { UP_COLOR, DOWN_COLOR, DEFAULT_DRAWING_LINE_COLOR } from '../../lib/chart/colors';
+import {
+  UP_COLOR,
+  DOWN_COLOR,
+  DEFAULT_DRAWING_LINE_COLOR,
+  CHART_TEXT_COLOR,
+  CHART_GRID_COLOR,
+} from '../../lib/chart/colors';
 import { getIndicator } from '../../lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorMountHandle, PaneIndexAllocator } from '../../lib/chart/indicators/types';
 import {
@@ -114,11 +120,11 @@ export function ChartContainer({
       height: container.clientHeight,
       layout: {
         background: { color: 'transparent' },
-        textColor: '#9ca3af',
+        textColor: CHART_TEXT_COLOR,
       },
       grid: {
-        vertLines: { color: '#2e303a' },
-        horzLines: { color: '#2e303a' },
+        vertLines: { color: CHART_GRID_COLOR },
+        horzLines: { color: CHART_GRID_COLOR },
       },
       timeScale: {
         borderVisible: false,

@@ -208,5 +208,5 @@ screenshotFileName(stockNo, date?): string      // ta-painter-2330-20260723.png
 - **首次查詢失敗時的線條還原**：線條要等 `bars` 到位才補上，若還原當下的查詢失敗，`pendingLinesRef` 會一直留著（見 `project-planning/technical-debt.md`）。
 - **Web Share 真機路徑未驗證**：沙盒瀏覽器原生沒有 `navigator.share`／`canShare`，`share()` 成功／取消／被拒三條分支都是用 stub 模擬的。iOS Safari／Android Chrome 上實際叫出系統分享面板、分享到 LINE 尚待真機補測（見 `project-planning/technical-debt.md`）。
 - **同步截圖會擋主執行緒**：`takeChartScreenshotBlobSync()` 在 1440×1080 實測約 82 ms。目前只有「分享圖片」走這條，且是使用者主動觸發，可接受。
-- **截圖底色取頁面 `--bg`，但圖表本身配色寫死深色**：目前沒有主題切換 UI 所以看不出來；日後支援淺色主題時，截圖會變成白底配深色格線（見 `project-planning/technical-debt.md` 的「ChartContainer 圖表配色寫死」）。
+- **截圖底色取頁面 `--bg`，而 `--bg` 固定深色**：chart4 起整站固定 dark，`resolvePageBackgroundColor()` 的結果恆為 `#16171d`，與圖表內部配色一致，不再受使用者系統主題影響（原本「淺色主題下截出白底配深色格線」的落差已消除，見 [`indicators.md`](indicators.md#整站固定-darkchart4)）。
 - 下載／分享後的原生 UI（下載氣泡、系統分享面板）不在頁面控制範圍，按鈕文字與選項無法自訂。
