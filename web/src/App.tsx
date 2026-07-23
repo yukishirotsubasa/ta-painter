@@ -20,6 +20,7 @@ import './lib/chart/indicators/macd';
 import { getIndicator } from './lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorParamValues } from './lib/chart/indicators/types';
 import { DEFAULT_DATA_SOURCE, estimateRequestCount, fetchBars, type DataSource } from './lib/data/dataSource';
+import { classifyDataError, type DataErrorKind } from './lib/data/errors';
 import type { DateRange, FetchProgress, OhlcvBar } from './lib/data/types';
 import { screenshotFileName } from './lib/share/imageShare';
 import type { ShareLine } from './lib/state/schema';
@@ -48,6 +49,9 @@ const OFFICIAL_MARKET_UNKNOWN_NOTICE =
 
 const SHARE_INVALID_NOTICE = '分享連結無法解析（可能被截斷或改動過），已改用預設畫面';
 
+/** 只在判定為上游被擋／掛掉時追加：資料源反爬蟲規則隨時可能變動，使用者無從自行排除。 */
+const UPSTREAM_BLOCKED_HINT = '資料源可能已失效（上游擋掉或服務異常），並非你的輸入有誤；若持續發生請聯絡製作者。';
+
 function lastMonthsRange(months: number): DateRange {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
@@ -70,7 +74,8 @@ function App() {
   const [range] = useState<DateRange>(() => restored?.range ?? lastMonthsRange(QUERY_MONTHS));
   const [bars, setBars] = useState<OhlcvBar[]>([]);
   const [progress, setProgress] = useState<FetchProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // 帶分類是為了決定要不要在原始訊息下方追加 UPSTREAM_BLOCKED_HINT。
+  const [error, setError] = useState<{ message: string; kind: DataErrorKind } | null>(null);
   // 「這次沒有查詢、畫面沿用前一次結果」的說明，與 error（查詢失敗）分開。
   const [notice, setNotice] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(
@@ -91,8 +96,12 @@ function App() {
   /**
    * 待還原的分享線條（share2）。線條要等第一批 K 線資料到位才重建：
    * `ChartContainer` 會在 `stockNo` 變動（含首次掛載）時 `clearAll()`，太早加會被清掉。
+   * 一併記下當初要還原的股票代號（share6）：連結的第一次查詢失敗時 pending 會留著，
+   * 若不綁代號，使用者接著改查別支股票就會把線畫到不相干的標的上。
    */
-  const pendingLinesRef = useRef<ShareLine[]>(restored?.lines ?? []);
+  const pendingLinesRef = useRef<{ stockNo: string; lines: ShareLine[] } | null>(
+    restored ? { stockNo: restored.symbol, lines: restored.lines } : null,
+  );
 
   // 訂閱身分需穩定，否則每次 render 都會重新訂閱 DrawingController。
   const handleLinesChange = useCallback((next: DrawnLine[]) => {
@@ -120,23 +129,28 @@ function App() {
     setSelectedLineId((prev) => selectionAfterCollapse(prev, !settingsOpen, drawingSectionCollapsed));
   }, [settingsOpen, drawingSectionCollapsed]);
 
-  // 分享連結的線條還原（share2）：等第一批資料進圖後一次補上，之後這個 ref 就永遠是空的。
+  // 分享連結的線條還原（share2）：等第一批資料進圖後一次補上，之後這個 ref 就永遠是 null。
   useEffect(() => {
     const pending = pendingLinesRef.current;
-    if (pending.length === 0 || bars.length === 0) return;
+    if (!pending || bars.length === 0) return;
     const chart = chartRef.current;
     if (!chart) return;
 
-    pendingLinesRef.current = [];
-    for (const line of pending) {
+    // 資料到位的是別支股票（連結那次查詢失敗後使用者改查其他代號）：線條直接丟棄，
+    // 但仍要清掉 pending，否則 hash 同步會被永久卡住（share6）。
+    const matched = pending.stockNo === stockNo;
+    pendingLinesRef.current = null;
+    if (!matched) return;
+
+    for (const line of pending.lines) {
       chart.addLine(toTrendLinePoints(line), { color: line.color, width: line.width });
     }
-  }, [bars]);
+  }, [bars, stockNo]);
 
   // 目前畫面狀態同步回 hash（share2）：用 replaceState 而非 pushState，避免灌爆瀏覽器上一頁記錄。
   useEffect(() => {
     // 還原未完成前先不要寫，否則會用「還沒補上線條」的狀態覆蓋掉連結裡的線。
-    if (pendingLinesRef.current.length > 0) return;
+    if (pendingLinesRef.current) return;
 
     try {
       const hash = formatShareHash({
@@ -150,7 +164,9 @@ function App() {
     } catch {
       // 編碼失敗只代表這次沒更新網址（例如出現無法編碼的參數值），不該影響畫面。
     }
-  }, [stockNo, dataSource, range, indicators, lines]);
+    // `bars` 不進 hash，列在依賴裡是為了讓「上一個 effect 剛清掉 pending」的那次 commit
+    // 立刻補寫一次 hash（ref 變動不會觸發 render，否則要等下一次使用者操作才解封）。
+  }, [stockNo, dataSource, range, indicators, lines, bars]);
 
   function addIndicator(definitionId: string) {
     const definition = getIndicator(definitionId);
@@ -209,7 +225,10 @@ function App() {
         .catch((err: unknown) => {
           if (err instanceof DOMException && err.name === 'AbortError') return;
           setBars([]);
-          setError(err instanceof Error ? err.message : String(err));
+          setError({
+            message: err instanceof Error ? err.message : String(err),
+            kind: classifyDataError(err),
+          });
         })
         .finally(() => setProgress(null));
     }, QUERY_DEBOUNCE_MS);
@@ -336,7 +355,10 @@ function App() {
        */}
       <main className="app-main">
         {error ? (
-          <p className="app-error">{error}</p>
+          <div className="app-error">
+            <p>{error.message}</p>
+            {error.kind === 'upstream-blocked' ? <p className="app-error-hint">{UPSTREAM_BLOCKED_HINT}</p> : null}
+          </div>
         ) : (
           <ChartContainer
             ref={chartRef}

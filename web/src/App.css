@@ -57,6 +57,18 @@ body,
   color: #f87171;
 }
 
+.app-error p {
+  margin: 0;
+}
+
+/* 上游被擋時追加的說明，比原始錯誤訊息弱一階，避免蓋過可回報的原始訊息。 */
+.app-error-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 140%;
+  color: var(--text);
+}
+
 /* 「這次沒查、沿用前一次結果」的說明；查詢失敗請用 .app-error。 */
 .app-notice {
   flex: 1;

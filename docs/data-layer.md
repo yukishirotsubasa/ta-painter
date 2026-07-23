@@ -113,6 +113,20 @@ function fetchBars(
 - **代號送出 debounce（300ms）**：Enter 確認、下拉建議選取、查詢按鈕三條路徑都會走同一個查詢 effect，`fetchBars()` 包在 `setTimeout(…, QUERY_DEBOUNCE_MS)` 內，cleanup 同時 `clearTimeout()` 與 `AbortController.abort()`，因此**快速連續切換代號時只有最後一次真的發出請求**。進度條在 timer 之外先設好，載入回饋不受延遲影響。
 - **同代號重送為 no-op**：`lib/stock/selection.ts` 的 `applySubmittedCode(prev, code)` 在代號未變時回傳原物件參考，避免「重按查詢 → `market` 被重設為 `null` → 官方源守門 → 清單解析完再查一次」的多餘往返。
 
+## 錯誤分類（`errors.ts`，data8）
+
+三個 provider 都只 `throw new Error(...)`（訊息帶來源與原因），分類由純函式 `classifyDataError(err): DataErrorKind` 從錯誤訊息事後判別，provider 不需改動。
+
+- `upstream-blocked`：上游被擋／掛掉。命中條件為 `err instanceof TypeError`（瀏覽器 fetch 失敗一律是 `TypeError`）、訊息含 `Failed to fetch`／`NetworkError`／`Network request failed`／`Load failed`，或訊息中的 `HTTP {status}` 為 **403 / 429 / >= 500**。
+- `no-data`：請求成功但查無資料。命中條件為訊息中的 `HTTP 404`（Yahoo 對不存在的 symbol），或訊息含「查詢失敗」字樣（TWSE／TPEx 的 `stat` 非 OK、Yahoo 的 `chart.error.description`）。
+- `unknown`：其餘（含 `無法判斷 {stockNo} 的市場別…`、`HTTP 400` 這類無法歸類的狀態碼、非 `Error` 值）。
+
+**判別順序：`TypeError` → 網路錯誤訊息 → `HTTP {status}` → 「查詢失敗」字樣 → `unknown`。** 狀態碼必須排在「查詢失敗」之前，因為 Yahoo 的訊息（`Yahoo 查詢失敗（2454）：HTTP 403`）同時含兩者。
+
+分類規則有單元測試（`errors.test.ts`）涵蓋三種 kind；瀏覽器實測（2026-07-24，沙盒 Chromium）：stub proxy 回 403 → 顯示 `Yahoo 查詢失敗（2454）：HTTP 403` **加上**提示；查無資料（`No data found, symbol may be delisted`）→ 只有原始訊息，`.app-error-hint` 不存在。
+
+`App.tsx` 的 `error` state 為 `{ message, kind }`：`message` 永遠原樣顯示（方便使用者回報時附上），**只有 `kind === 'upstream-blocked'` 時**才在下方追加一行固定文案（`.app-error-hint`，`資料源可能已失效（上游擋掉或服務異常），並非你的輸入有誤；若持續發生請聯絡製作者。`）。刻意只給純文字，不附 GitHub Issues 連結或 email。
+
 ## localStorage 快取（`cache.ts`）
 
 - Key 格式：`` ohlcv:{providerId}:{stockNo}:{YYYYMM} ``，儲存內容為該月**完整**的 `OhlcvBar[]`（未依查詢區間裁切）。
@@ -127,4 +141,5 @@ function fetchBars(
 - **Yahoo 路徑不走 localStorage 月快取**：`fetchBars()` 對 Yahoo 直接單次請求，重查同一區間仍會實打上游一次。這是明確決策（Yahoo 單次查詢成本低），請求頻率由代號送出的 300ms debounce 控制，不另外加快取回填。
 - **查詢區間固定 6 個月**：`App.tsx` 的 `QUERY_MONTHS` 寫死，沒有區間選擇 UI。
 - Yahoo 的成交量不含盤後定價／鉅額交易，數值略低於 TWSE／TPEx 官方（OHLC 一致）；三來源的量能單位雖已統一為股數，但同一檔股票跨來源查詢時量能會有小幅落差，見 [technical-debt.md](../project-planning/technical-debt.md)。
-- TPEx／Yahoo 的反爬蟲／IP 封鎖規則不受我方控制，proxy 可能再次失效且目前無監控，見 [technical-debt.md](../project-planning/technical-debt.md)。
+- TPEx／Yahoo 的反爬蟲／IP 封鎖規則不受我方控制，proxy 可能再次失效；沒有週期性健康檢查（原 cron 方向已取消），只有 data8 的使用端即時提示，見 [technical-debt.md](../project-planning/technical-debt.md)。
+- **錯誤分類靠訊息字串比對**：provider 沒有結構化的錯誤型別，`classifyDataError()` 依賴訊息中的 `HTTP {status}` 與「查詢失敗」字樣，改動 provider 錯誤訊息時必須同步檢查 `errors.test.ts`。

@@ -97,7 +97,7 @@
 - **決策（2026-07-23）**：**延後**。任務檔已存在且方案明確，但 `worker/` 極少變動、`handler.ts` 邏輯簡單，本輪不排入；`ci2` 維持「等待」，排在執行順序最後。
 - **對應任務**：[ci2](task-pool/ci2.md)。
 
-## TPEx／Yahoo 的反爬蟲規則不受控，proxy 可能再次失效且無監控
+## ~~TPEx／Yahoo 的反爬蟲規則不受控，proxy 可能再次失效且無監控~~（已解：data8 使用端即時提示，2026-07-24）
 
 - **來源任務**：[infra2](task-pool/infra2.md)
 - **狀況**：實作過程中實測發現兩個上游站台的存取限制都是「非官方文件、隨時可能變動」的規則：TPEx 會封鎖 Cloudflare Workers 的出站 IP range（因此把 proxy 從 Cloudflare Worker 改成 Deno Deploy，見 [`docs/proxy.md`](../docs/proxy.md)）、Yahoo Finance 對非瀏覽器 `User-Agent` 一律回 429（因此固定偽裝瀏覽器 UA）。這些都是對方站台當下的行為，沒有官方文件保證不會再變。
@@ -107,6 +107,8 @@
 - **原方向（已取消）**：GitHub Actions cron 定期 curl 兩個 proxy 端點、失敗時發通知。原任務 [ci3](task-pool/ci3.md) 標記取消並保留取消理由供追溯，已從 `task-list.md` 移除。
 - **實際做法**：資料層對錯誤分類（`upstream-blocked` / `no-data` / `unknown`），`App.tsx` **只在 `upstream-blocked` 時**於原始錯誤訊息下方追加固定文案，說明資料源可能已失效、請聯絡製作者。**只顯示文字，不附 GitHub Issues 連結或 email**；原始錯誤訊息保留顯示，方便回報時附上。
 - **對應任務**：[data8](task-pool/data8.md)（取代 ci3）。
+- **結果（2026-07-24，data8）**：新增 `lib/data/errors.ts` 的純函式 `classifyDataError(err)`（`upstream-blocked`／`no-data`／`unknown`，三個 provider 的 `throw` 未動），`App.tsx` 的 `error` state 改帶 `kind`，只在 `upstream-blocked` 時於原始訊息下方追加 `.app-error-hint` 純文字提示。規則與判別順序見 [`docs/data-layer.md`](../docs/data-layer.md#錯誤分類errorstsdata8)。**依決策，週期性健康檢查／告警不做**（cron 對使用者當下的失敗沒有幫助），此則以「使用端即時提示」結案。
+- **殘留（已轉為 `docs/data-layer.md` 的已知限制，不另開任務）**：分類靠錯誤訊息字串比對（`HTTP {status}`／「查詢失敗」字樣），改動 provider 訊息時須同步檢查 `errors.test.ts`。
 
 ## MA volume 來源的 pane index 在 `ma.ts` 硬編，與 `ChartContainer` 的 pane 佈局約定重複
 
@@ -163,7 +165,8 @@
 - **現況（2026-07-23 更新，sidebar1/2/3）**：缺口再度擴大。側邊欄收合、區塊折疊、資料源切換、清單選取／刪除、折疊自動取消選取等互動同樣沒有元件測試，只有抽出的純函式（`lineSelection`、`lineLabel`、`applySubmittedCode`）有涵蓋。更嚴重的是**畫線相關端到端行為在沙盒內完全無法驗證**：Browser pane 為 hidden，CSS transition 與 rAF 凍結、canvas 不重繪、lightweight-charts 的 `subscribeCrosshairMove` 不觸發（實測對 container 與所有子元素派送合成 `mousedown`/`mousemove`/`mouseup` 都畫不出線），連第二個 pane 的 DOM row 與分隔線都要等實際 paint 才生成。因此「拖曳畫線 → 清單列出 → 點選高亮 → 刪除消失」只能靠使用者人工測。
 - **現況（2026-07-23 更新，responsive1/2）**：斷點與佈局層的互動同樣沒有元件測試，只有 `useResponsive` 的 store 函式（`readBreakpoint`/`subscribeBreakpoint`，6 例，以 `vi.stubGlobal('window', …)` 假 MQL 驗證）與 `chipLabel.ts`（9 例）有涵蓋；`useLayoutEffect` 觸發 `ChartHandle.resize()`、`settingsOpen` 的斷點連動、圖例 chip 與參數小面板的互斥規則都靠手測。**另外發現 hidden pane 的凍結範圍比先前記錄的更廣**：`document.visibilityState === 'hidden'` 時整個 rendering steps 都不跑，因此 `requestAnimationFrame` 直接 timeout、`ResizeObserver` 回呼不觸發、**`matchMedia` 的 `change` 事件也不派送**（實測 `resize_window` 後 CSS media query 已套用、`matchMedia().matches` 已翻轉，但 React 收不到事件 → 佈局不切換），CSS transition 也不推進（側邊欄收合後 `getComputedStyle().width` 卡在起始值 260px，要暫時 `style.transition = 'none'` 才量得到終值 32px）。結論：**「拖曳視窗跨斷點」這類即時切換在沙盒內無法驗證**，只能「調整視窗尺寸 → 重新載入 → 量測初始渲染」，加上以程式化 `element.click()` 驅動互動後讀 DOM。
 - **現況（2026-07-23 更新，share4/5）**：`ShareMenu` 的分支邏輯（剪貼簿成功／不支援／被拒、Web Share 成功／`canShare` 回 false／使用者取消／被拒、截圖回 `null` 的失敗路徑）同樣沒有元件測試，純函式部分（`imageShare` 的能力偵測與 `screenshot` 的編碼路徑）有 20 例單元測試。這次是在 dev server 上用 `javascript_tool` 側錄 `clipboard.write`／`canShare`／`share`／`HTMLAnchorElement.prototype.click`／`URL.createObjectURL`，再對每條分支各點一次按鈕來驗證——涵蓋度夠，但每次回歸都得重搭一次側錄，成本高且無法自動重跑。
-- **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`、`ShareMenu` 的 fallback 分支（stub 掉 `imageShare` 的能力偵測即可，不需要真的 canvas）。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
+- **現況（2026-07-24 更新，data8/share6）**：兩個任務的可測邏輯都抽成了純函式並有單元測試（`classifyDataError` 11 例），但**「錯誤分類 → 是否顯示提示」與「pending 綁定代號」的 React 接線本身仍無元件測試**：`error` state 帶 `kind` 後的條件渲染、`pendingLinesRef` 的比對與清空、hash 同步依賴 `bars` 才能即時解封——這三件都靠沙盒手測。這次的驗證手法比先前更省事，值得沿用：**用頁內 `await import('/ta-painter/src/lib/state/shareUrl.ts')` 直接叫應用自己的模組**（vite dev server 會供應原始碼模組）現場產分享連結，並以 `readShareHash(location.hash)` 反解 App 回寫的 hash 當作 `lines` state 的斷言依據，不必碰 canvas；互動則用 `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set` 繞過 React 的 value tracker 後 `form.requestSubmit()`。另記一個沙盒坑：`preview_start` 回報的 port 與 vite 實際監聽的 port 可能不同（vite 自行讓 port 時），要看 `preview_logs` 的 Local 網址，且 tab 偶爾會被彈回失效的網址，長流程最好壓成單一 `javascript_tool` 呼叫。
+- **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`、`ShareMenu` 的 fallback 分支（stub 掉 `imageShare` 的能力偵測即可，不需要真的 canvas）、`upstream-blocked` 才渲染 `.app-error-hint`、pending 代號不符時不呼叫 `ChartHandle.addLine`。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
 - **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。已明確知道缺口在哪、也已把可測邏輯盡量抽成純函式（`searchStocks`/`lineSelection`/`chipLabel`/`readShareHash` 等都有單元測試涵蓋），目前選擇維持人工手測。本則**保留在清單上持續累積**——每次新增互動邏輯就更新「現況」段落，讓缺口規模保持可見，日後決定要補時有現成的優先案例清單。
 - **對應任務**：暫無（Skip）。
 
@@ -240,7 +243,7 @@
 - **建議**：成本很低的兩步：(1) 兩個面板各加一個 `keydown` 監聽，`Escape` 時呼叫 `onClose`；(2) 開啟時把焦點移到面板標題（`tabIndex={-1}` + `focus()`），關閉時還原到觸發按鈕。真要做完整 modal（focus trap + `aria-modal`）則與「非模態、要能同時看圖」的設計相衝突，不建議。
 - **對應任務**：無（已關閉）。
 
-## 分享連結的線條還原綁在「第一批 bars 到位」，首查失敗後可能把線畫到別支股票上
+## ~~分享連結的線條還原綁在「第一批 bars 到位」，首查失敗後可能把線畫到別支股票上~~（已解：share6，2026-07-24）
 
 - **來源任務**：[share2](task-pool/share2.md)（2026-07-23）
 - **狀況**：`App.tsx` 把解出的 `lines` 放進 `pendingLinesRef`，由一個依賴 `[bars]` 的 effect 在 `bars.length > 0` 時一次補上（延後是必要的：`ChartContainer` 在 `stockNo` 變動含首次掛載時會 `clearAll()`，太早加會被清掉）。但這個 pending **沒有綁定「當初要還原的是哪支股票」**：若還原當下的查詢失敗（`error` 分支不 render `ChartContainer`，`chartRef` 為 null），pending 會一直留著，使用者接著改查另一支股票、資料成功到位時，這批線就會被畫到**新的股票**上。
@@ -248,6 +251,7 @@
 - **建議**：把 pending 改成 `{ stockNo, lines }`，還原 effect 先比對 `stockNo` 相符才補線、不符就直接丟棄 pending（並解除 hash 同步的封鎖）。改動集中在 `App.tsx` 的兩個 effect，成本很低，等有元件測試環境時可一併補上回歸測試。
 - **決策（2026-07-23）**：**實作**。這是本次盤點中唯一確定存在的功能性 bug，雖然觸發路徑狹窄，但修法明確、改動集中在 `App.tsx` 兩個 effect、成本很低，沒有理由留著。
 - **對應任務**：[share6](task-pool/share6.md)。
+- **結果（2026-07-24，share6）**：`pendingLinesRef` 改為 `{ stockNo, lines } | null`，還原 effect（依賴改為 `[bars, stockNo]`）比對代號相符才補線、不符直接丟棄，兩條路徑都先把 ref 設為 `null`；hash 同步的守門條件改為 `if (pendingLinesRef.current) return`，並把 `bars` 加進其依賴陣列（ref 變動不觸發 render，否則要等下一次使用者操作才補寫 hash）。三項驗收皆在沙盒瀏覽器實測通過，見 [`docs/share.md`](../docs/share.md#手動驗證紀錄)。**副作用**：首查失敗的那批線改為明確丟棄，要拿回來只能重新整理連結（已記入 `docs/share.md` 的已知限制）。
 
 ## ~~觸控畫線手勢只在 fake `TouchEvent` 下驗證，真機（iOS Safari／Android Chrome）未測~~（決策：不處理，2026-07-23）
 

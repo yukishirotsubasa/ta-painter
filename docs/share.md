@@ -90,13 +90,15 @@ toShareTime(time) / toChartTime(shareTime)
 
 1. **掛載當下讀一次** `window.location.hash`（之後 hash 由 App 自己維護，不回讀、不監聽 `hashchange`）。
 2. `symbol` / `prov` / `range` / `indicators` 直接作為對應 `useState` 的初始值。`range` 原本每次查詢用 `lastMonthsRange(6)` 重算，為了能被連結還原改成收進 state。
-3. **線條延後還原**：解出的 `lines` 先放進 `pendingLinesRef`，等**第一批 K 線資料到位**（`bars.length > 0`）才逐條 `chartRef.current.addLine()`。不能更早——`ChartContainer` 會在 `stockNo` 變動（含首次掛載）時 `clearAll()`，太早加的線會被清掉。
+3. **線條延後還原**：解出的 `lines` 先放進 `pendingLinesRef`（型別為 `{ stockNo, lines } | null`），等**第一批 K 線資料到位**（`bars.length > 0`）才逐條 `chartRef.current.addLine()`。不能更早——`ChartContainer` 會在 `stockNo` 變動（含首次掛載）時 `clearAll()`，太早加的線會被清掉。
+   - **pending 綁定股票代號（share6）**：還原前先比對 `pending.stockNo === stockNo`，不符（連結那次查詢失敗、使用者不重整就改查別支）直接丟棄，避免線被畫到不相干的標的上。**相符與不符兩條路徑都會把 ref 設為 `null`**，否則 hash 同步會被永久卡住。effect 依賴 `[bars, stockNo]`。
 4. `status: 'invalid'` 時照常載入預設畫面，並在 header 顯示「分享連結無法解析（可能被截斷或改動過），已改用預設畫面」；使用者送出新代號或切換資料源後這則提示消失。
 
-hash 同步（同一個 `useEffect`，依賴 `[stockNo, dataSource, range, indicators, lines]`）：
+hash 同步（同一個 `useEffect`，依賴 `[stockNo, dataSource, range, indicators, lines, bars]`）：
 
 - 用 `history.replaceState` 而非 `pushState`，操作過程不會灌爆瀏覽器上一頁記錄。
-- **還原完成前不寫**（`pendingLinesRef` 非空時直接 return），否則會用「還沒補上線條」的狀態覆蓋掉連結裡的線。
+- **還原完成前不寫**（`pendingLinesRef` 非 `null` 時直接 return），否則會用「還沒補上線條」的狀態覆蓋掉連結裡的線。
+- `bars` 不進 hash 內容，列在依賴裡只是為了讓「上一個 effect 剛清掉 pending」的那次 commit 立刻補寫一次 hash——ref 變動不會觸發 render，少了這個依賴就要等下一次使用者操作才解封。
 - 整段包 `try/catch`：編碼失敗只代表這次沒更新網址，不影響畫面。
 - `toShareLines()` 會略過尚未定案（`points === null`）或時間格式無法編碼（`BusinessDay` 物件形式，本專案的日線資料不會產生）的線，其餘照常分享。
 
@@ -202,10 +204,16 @@ screenshotFileName(stockNo, date?): string      // ta-painter-2330-20260723.png
 - **分享圖片**五條分支（此沙盒瀏覽器原生**沒有** `navigator.share`／`canShare`，第一列是真實情境，其餘 stub）：原生無 Web Share → 下載；`canShare` 回 false → **不呼叫** `share()`、下載；分享成功 → 提示「已分享圖片」、無下載；`AbortError` → 無下載無錯誤提示；`NotAllowedError` → 下載。`share()` 收到的參數為 `{ title: 'TA Painter 2330', files: [File('ta-painter-2330-20260723.png', image/png)] }`。
 - 使用者實測確認：複製圖片後貼到其他軟體顯示正確。
 
+線條還原綁定代號（share6，2026-07-24，沙盒 Chromium + `javascript_tool`，連結以頁內 `import` 的 `formatShareHash()` 現場產生）：
+
+- **正常路徑**：`2330` + 2 條線的連結開啟後，App 回寫的 hash 仍含 2 條線（hash 由 `lines` state 產生，等同確認線真的進了 `DrawingController`）。
+- **失敗後改查**：`0000` 的連結開啟 → 顯示 `Yahoo 查詢失敗（0000）：No data found, symbol may be delisted`、hash 維持原字串（pending 未消耗）；不重整直接送出 `2330` → 資料到位後畫線清單為空、hash 的線條數為 0。
+- **hash 解封**：承上，hash 已改寫為 `symbol: 2330`，同步不再被 pending 卡住。
+
 ## 已知限制 / 尚未實作
 
 - **`range` 沒有 UI**：目前一律是「最近 6 個月」，只是為了讓連結能固定住當初的區間才進 `ShareState`。因此舊分享連結打開時用的是**當初分享的區間**，不會跟著今天往後滾動。
-- **首次查詢失敗時的線條還原**：線條要等 `bars` 到位才補上，若還原當下的查詢失敗，`pendingLinesRef` 會一直留著（見 `project-planning/technical-debt.md`）。
+- **首次查詢失敗時線條不會還原**：線條要等 `bars` 到位才補上，若還原當下的查詢失敗就沒有時機補線。share6 起 pending 綁定代號，改查別支股票時直接丟棄（不會畫錯標的），但也代表**那批線就此消失**——要拿回來只能重新整理該連結。
 - **Web Share 真機路徑未驗證**：沙盒瀏覽器原生沒有 `navigator.share`／`canShare`，`share()` 成功／取消／被拒三條分支都是用 stub 模擬的。iOS Safari／Android Chrome 上實際叫出系統分享面板、分享到 LINE 尚待真機補測（見 `project-planning/technical-debt.md`）。
 - **同步截圖會擋主執行緒**：`takeChartScreenshotBlobSync()` 在 1440×1080 實測約 82 ms。目前只有「分享圖片」走這條，且是使用者主動觸發，可接受。
 - **截圖底色取頁面 `--bg`，而 `--bg` 固定深色**：chart4 起整站固定 dark，`resolvePageBackgroundColor()` 的結果恆為 `#16171d`，與圖表內部配色一致，不再受使用者系統主題影響（原本「淺色主題下截出白底配深色格線」的落差已消除，見 [`indicators.md`](indicators.md#整站固定-darkchart4)）。
