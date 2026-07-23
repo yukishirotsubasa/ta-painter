@@ -7,7 +7,7 @@ import {
   type Time,
 } from 'lightweight-charts';
 import { DEFAULT_DRAWING_LINE_COLOR } from '../colors';
-import { TrendLinePrimitive, type TrendLinePoint } from './trendLinePrimitive';
+import { TrendLinePrimitive, type TrendLinePoint, type TrendLineStyle } from './trendLinePrimitive';
 
 export interface DrawingControllerOptions {
   chart: IChartApi;
@@ -47,6 +47,8 @@ const MAIN_PANE_INDEX = 0;
  *
  * drawing7：`setDrawingColor()` 決定之後畫出的新線顏色；顏色只能在畫線前指定，線一旦畫出就固定不可改
  * （選線改色因觸控/桌面上選取單條線的操作成本過高而不提供）。
+ *
+ * share2：`addLine()` 讓 URL 還原不必經過拖曳事件也能建立線條，與拖曳路徑共用同一份線條管理邏輯。
  */
 export class DrawingController {
   private readonly chart: IChartApi;
@@ -130,6 +132,22 @@ export class DrawingController {
       color: primitive.style.color,
       width: primitive.style.width,
     }));
+  }
+
+  /**
+   * 直接以一組邏輯座標＋樣式建立一條線並回傳其 id（share2 的 URL 還原路徑）。
+   * 與拖曳路徑共用同一套 id 產生、attach 與清單通知邏輯，因此還原出來的線在清單／高亮／刪除上
+   * 與手畫的線完全等價。`style` 省略的欄位沿用 `TrendLinePrimitive` 的預設（色用目前選色）。
+   */
+  addLine(points: readonly [TrendLinePoint, TrendLinePoint], style?: Partial<TrendLineStyle>): string {
+    const primitive = new TrendLinePrimitive({ color: this.drawingColor, ...style });
+    primitive.setPoints([points[0], points[1]]);
+    this.series.attachPrimitive(primitive);
+
+    const id = this.nextLineId();
+    this.lines.push({ id, primitive });
+    this.emitLinesChange();
+    return id;
   }
 
   // --- 顏色 API（drawing7） ---

@@ -3,6 +3,7 @@ import { ChartContainer, type ChartHandle } from './components/chart/ChartContai
 import { ChartToolbar } from './components/chart/ChartToolbar';
 import { DrawingToolbar } from './components/chart/DrawingToolbar';
 import { IndicatorPanel } from './components/chart/IndicatorPanel';
+import { ShareLinkButton } from './components/share/ShareLinkButton';
 import { DataSourcePanel } from './components/sidebar/DataSourcePanel';
 import { DrawingListPanel } from './components/sidebar/DrawingListPanel';
 import { Sidebar } from './components/sidebar/Sidebar';
@@ -17,6 +18,15 @@ import { getIndicator } from './lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorParamValues } from './lib/chart/indicators/types';
 import { DEFAULT_DATA_SOURCE, estimateRequestCount, fetchBars, type DataSource } from './lib/data/dataSource';
 import type { DateRange, FetchProgress, OhlcvBar } from './lib/data/types';
+import type { ShareLine } from './lib/state/schema';
+import {
+  formatShareHash,
+  readShareHash,
+  toIndicatorInstances,
+  toShareIndicators,
+  toShareLines,
+  toTrendLinePoints,
+} from './lib/state/shareUrl';
 import { findByCode } from './lib/stock/search';
 import { applySubmittedCode } from './lib/stock/selection';
 import { loadStockList } from './lib/stock/stockList';
@@ -32,6 +42,8 @@ const QUERY_DEBOUNCE_MS = 300;
 const OFFICIAL_MARKET_UNKNOWN_NOTICE =
   '代號不在股票清單內，官方源無法判斷市場別；圖表仍顯示前一次查詢結果，請改用 Yahoo 或改查其他代號';
 
+const SHARE_INVALID_NOTICE = '分享連結無法解析（可能被截斷或改動過），已改用預設畫面';
+
 function lastMonthsRange(months: number): DateRange {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
@@ -41,15 +53,26 @@ function lastMonthsRange(months: number): DateRange {
 }
 
 function App() {
-  const [symbol, setSymbol] = useState<SymbolSelection>({ code: DEFAULT_STOCK_NO, market: null });
+  // 只在掛載當下讀一次 hash：之後 hash 由本 App 自己 replaceState 維護，不需要（也不該）反覆回讀。
+  const [initialShare] = useState(() => readShareHash(window.location.hash));
+  const restored = initialShare.status === 'ok' ? initialShare.state : null;
+
+  const [symbol, setSymbol] = useState<SymbolSelection>({ code: restored?.symbol ?? DEFAULT_STOCK_NO, market: null });
   const stockNo = symbol.code;
-  const [dataSource, setDataSource] = useState<DataSource>(DEFAULT_DATA_SOURCE);
+  const [dataSource, setDataSource] = useState<DataSource>(restored?.prov ?? DEFAULT_DATA_SOURCE);
+  // 查詢區間目前沒有 UI，但要能被分享連結還原，因此收進 state 而非每次查詢重算。
+  const [range] = useState<DateRange>(() => restored?.range ?? lastMonthsRange(QUERY_MONTHS));
   const [bars, setBars] = useState<OhlcvBar[]>([]);
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 「這次沒有查詢、畫面沿用前一次結果」的說明，與 error（查詢失敗）分開。
   const [notice, setNotice] = useState<string | null>(null);
-  const [indicators, setIndicators] = useState<IndicatorInstance[]>([]);
+  const [shareNotice, setShareNotice] = useState<string | null>(
+    initialShare.status === 'invalid' ? SHARE_INVALID_NOTICE : null,
+  );
+  const [indicators, setIndicators] = useState<IndicatorInstance[]>(() =>
+    toIndicatorInstances(restored?.indicators ?? []),
+  );
   const [drawingMode, setDrawingMode] = useState(false);
   const [drawingColor, setDrawingColor] = useState(DEFAULT_DRAWING_LINE_COLOR);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -58,6 +81,11 @@ function App() {
   const [lines, setLines] = useState<DrawnLine[]>([]);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const chartRef = useRef<ChartHandle | null>(null);
+  /**
+   * 待還原的分享線條（share2）。線條要等第一批 K 線資料到位才重建：
+   * `ChartContainer` 會在 `stockNo` 變動（含首次掛載）時 `clearAll()`，太早加會被清掉。
+   */
+  const pendingLinesRef = useRef<ShareLine[]>(restored?.lines ?? []);
 
   // 訂閱身分需穩定，否則每次 render 都會重新訂閱 DrawingController。
   const handleLinesChange = useCallback((next: DrawnLine[]) => {
@@ -69,6 +97,38 @@ function App() {
   useEffect(() => {
     setSelectedLineId((prev) => selectionAfterCollapse(prev, sidebarCollapsed, drawingSectionCollapsed));
   }, [sidebarCollapsed, drawingSectionCollapsed]);
+
+  // 分享連結的線條還原（share2）：等第一批資料進圖後一次補上，之後這個 ref 就永遠是空的。
+  useEffect(() => {
+    const pending = pendingLinesRef.current;
+    if (pending.length === 0 || bars.length === 0) return;
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    pendingLinesRef.current = [];
+    for (const line of pending) {
+      chart.addLine(toTrendLinePoints(line), { color: line.color, width: line.width });
+    }
+  }, [bars]);
+
+  // 目前畫面狀態同步回 hash（share2）：用 replaceState 而非 pushState，避免灌爆瀏覽器上一頁記錄。
+  useEffect(() => {
+    // 還原未完成前先不要寫，否則會用「還沒補上線條」的狀態覆蓋掉連結裡的線。
+    if (pendingLinesRef.current.length > 0) return;
+
+    try {
+      const hash = formatShareHash({
+        symbol: stockNo,
+        prov: dataSource,
+        range,
+        indicators: toShareIndicators(indicators),
+        lines: toShareLines(lines),
+      });
+      window.history.replaceState(null, '', hash);
+    } catch {
+      // 編碼失敗只代表這次沒更新網址（例如出現無法編碼的參數值），不該影響畫面。
+    }
+  }, [stockNo, dataSource, range, indicators, lines]);
 
   function addIndicator(definitionId: string) {
     const definition = getIndicator(definitionId);
@@ -115,7 +175,6 @@ function App() {
       return;
     }
 
-    const range = lastMonthsRange(QUERY_MONTHS);
     const controller = new AbortController();
     setError(null);
     setNotice(null);
@@ -137,7 +196,7 @@ function App() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [stockNo, dataSource, routingMarket]);
+  }, [stockNo, dataSource, routingMarket, range]);
 
   return (
     <div className="app">
@@ -146,7 +205,10 @@ function App() {
         <ChartToolbar
           stockNo={stockNo}
           loading={progress !== null}
-          onSubmit={(code) => setSymbol((prev) => applySubmittedCode(prev, code))}
+          onSubmit={(code) => {
+            setShareNotice(null);
+            setSymbol((prev) => applySubmittedCode(prev, code));
+          }}
         />
         <DrawingToolbar
           drawingMode={drawingMode}
@@ -154,6 +216,7 @@ function App() {
           color={drawingColor}
           onColorChange={setDrawingColor}
         />
+        <ShareLinkButton />
         {progress && (
           <div className="progress" role="progressbar" aria-valuenow={progress.loaded} aria-valuemax={progress.total}>
             <div className="progress-bar" style={{ width: `${(progress.loaded / progress.total) * 100}%` }} />
@@ -161,6 +224,11 @@ function App() {
               {progress.message ?? '載入中'}（{progress.loaded}/{progress.total}）
             </span>
           </div>
+        )}
+        {shareNotice && (
+          <p className="app-notice" role="status">
+            {shareNotice}
+          </p>
         )}
         {notice && (
           <p className="app-notice" role="status">
@@ -170,7 +238,14 @@ function App() {
       </header>
       <div className="app-body">
         <Sidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed}>
-          <DataSourcePanel value={dataSource} onChange={setDataSource} market={symbol.market} />
+          <DataSourcePanel
+            value={dataSource}
+            onChange={(next) => {
+              setShareNotice(null);
+              setDataSource(next);
+            }}
+            market={symbol.market}
+          />
           <SidebarSection
             title="指標"
             collapsed={indicatorSectionCollapsed}

@@ -93,6 +93,7 @@ function mount(
 
 export const BollingerIndicator: IndicatorDefinition<BollingerPoint[]> = {
   id: 'bollinger',
+  urlCode: 'bb',
   label: '布林通道（Bollinger Bands）',
   placement: 'overlay',
   paramsSchema: [

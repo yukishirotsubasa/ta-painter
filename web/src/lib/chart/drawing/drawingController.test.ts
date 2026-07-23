@@ -401,3 +401,85 @@ describe('DrawingController color API (drawing7)', () => {
     expect(controller.getLines()[1].color).toBe('#ff00ff');
   });
 });
+
+describe('DrawingController.addLine (share2)', () => {
+  let fakeWindow: ReturnType<typeof createFakeEventTarget>;
+
+  beforeEach(() => {
+    fakeWindow = createFakeEventTarget();
+    vi.stubGlobal('window', fakeWindow);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function setup() {
+    const { chart, fireCrosshairMove } = createFakeChart();
+    const series = createFakeSeries(chart);
+    const container = createFakeContainer();
+    const controller = new DrawingController({ chart, series, container });
+    return { controller, container, series, fireCrosshairMove };
+  }
+
+  const POINTS = [
+    { time: '2024-01-02' as unknown as Time, price: 593.5 },
+    { time: '2024-03-15' as unknown as Time, price: 780.25 },
+  ] as const;
+
+  it('attaches a line with the given points and style, and reports it in getLines()', () => {
+    const { controller, series } = setup();
+
+    const id = controller.addLine(POINTS, { color: '#ff0000', width: 4 });
+
+    expect(series.attachPrimitive).toHaveBeenCalledTimes(1);
+    expect(controller.getLines()).toEqual([
+      { id, points: [POINTS[0], POINTS[1]], color: '#ff0000', width: 4 },
+    ]);
+  });
+
+  it('falls back to the current drawing color when no style is given', () => {
+    const { controller } = setup();
+
+    controller.setDrawingColor('#00ff00');
+    controller.addLine(POINTS);
+
+    expect(controller.getLines()[0].color).toBe('#00ff00');
+    expect(controller.getLines()[0].width).toBe(DEFAULT_TREND_LINE_WIDTH);
+  });
+
+  it('shares the id sequence with the drag path so restored and drawn lines never collide', () => {
+    const { controller, container, fireCrosshairMove } = setup();
+
+    const restoredId = controller.addLine(POINTS);
+    controller.setEnabled(true);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+
+    expect(restoredId).toBe('line-1');
+    expect(controller.getLines().map((line) => line.id)).toEqual(['line-1', 'line-2']);
+  });
+
+  it('notifies line-change listeners', () => {
+    const { controller } = setup();
+    const listener = vi.fn();
+    controller.onLinesChange(listener);
+
+    controller.addLine(POINTS);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0][0]).toHaveLength(1);
+  });
+
+  it('produces lines that deleteLine()/clearAll()/highlightLine() treat like drawn ones', () => {
+    const { controller, series } = setup();
+
+    const id = controller.addLine(POINTS);
+    controller.highlightLine(id);
+    expect(series.attachPrimitive.mock.calls[0][0].selected).toBe(true);
+
+    controller.deleteLine(id);
+
+    expect(series.detachPrimitive).toHaveBeenCalledTimes(1);
+    expect(controller.getLines()).toEqual([]);
+  });
+});

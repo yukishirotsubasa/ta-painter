@@ -124,6 +124,7 @@
 - **來源任務**：[symbol2](task-pool/symbol2.md)（2026-07-23）
 - **狀況**：vitest 目前跑在 node 環境（未裝 jsdom／happy-dom 與 testing-library），所有測試都只涵蓋純函式。symbol2 把可測邏輯盡量抽成純函式（`searchStocks`／`findByCode`／`findByNamePrefix`／`resolveSubmitCode`，23 例），但 `ChartToolbar` 內的互動——↑/↓ 環繞選取、Enter 送出、`isComposing` 擋隱式送出、`onMouseDown` 早於 `blur`、`stockNo` 外部變動的同步 `useEffect`、提示訊息的清除時機——沒有任何自動化測試，本次是逐項在 dev server 上以 DOM 查詢驗證的。
 - **影響**：這些互動細節（尤其 `isComposing` 與 `mousedown`/`blur` 的先後）正是最容易在重構時無聲壞掉的部分，回歸只能靠人工重測。另外沙盒環境的 Browser pane 無法截圖（`Screenshot timed out: the Browser pane is not displayed`），驗證只能靠 `javascript_tool` 讀 DOM，成本比一般手測更高。CDP 合成的 Enter 鍵也不會觸發表單的隱式送出，該路徑是改以 `form.requestSubmit()` 驗證、真實 Enter 由使用者複測確認。
+- **現況（2026-07-23 更新，share2）**：`App.tsx` 新增的兩個 effect（分享線條的延後還原、狀態變動回寫 hash）同樣沒有元件測試涵蓋，純函式部分（`readShareHash`/`formatShareHash`/`toShare*` 轉換、`DrawingController.addLine()`）有 17 例單元測試。這次是用「手工組出含 2 條線的 hash → 在 dev server 上以 `javascript_tool` 讀 DOM 驗證」取代拖曳畫線，繞過了 canvas 互動測不了的限制。另記一個沙盒工具面的坑：Browser pane 對「只有 hash 不同」的網址不會重新載入文件（等同瀏覽器的 fragment 導航），`location.reload()` 實測也會把 hash 丟掉，要驗證「帶 hash 開新頁」必須讓網址在 hash 以外也有差異（例如加 `?r=1`）才會觸發真正的 document 載入。
 - **現況（2026-07-23 更新，sidebar1/2/3）**：缺口再度擴大。側邊欄收合、區塊折疊、資料源切換、清單選取／刪除、折疊自動取消選取等互動同樣沒有元件測試，只有抽出的純函式（`lineSelection`、`lineLabel`、`applySubmittedCode`）有涵蓋。更嚴重的是**畫線相關端到端行為在沙盒內完全無法驗證**：Browser pane 為 hidden，CSS transition 與 rAF 凍結、canvas 不重繪、lightweight-charts 的 `subscribeCrosshairMove` 不觸發（實測對 container 與所有子元素派送合成 `mousedown`/`mousemove`/`mouseup` 都畫不出線），連第二個 pane 的 DOM row 與分隔線都要等實際 paint 才生成。因此「拖曳畫線 → 清單列出 → 點選高亮 → 刪除消失」只能靠使用者人工測。
 - **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
 - **對應任務**：暫無（defer，下次動到元件互動邏輯時一併補）。
@@ -153,3 +154,11 @@
 
 - **來源任務**：[data7](task-pool/data7.md)
 - **決策**：`dataSource.fetchBars()` 對 Yahoo 走單次 `provider.fetchDaily()`（一次取回整段區間），因此不經 `fetchDailyRange()` 的逐月快取與月間節流，重查同一區間仍會實打上游一次。經確認**維持現狀、不做快取回填也不另行處理**：Yahoo 單次查詢成本低，且官方源的近月資料本來就不快取（當月一律視為過期），加快取並不能解決「短時間大量請求」的問題。請求頻率改以**代號送出的 300ms debounce**（`App.tsx` 的 `QUERY_DEBOUNCE_MS` + `lib/stock/selection.ts` 的 `applySubmittedCode`）控制：Enter／下拉選取／查詢鈕連打時只有最後一次真的發出，同代號重送為 no-op。此則關閉、不再追蹤。
+
+## 分享連結的線條還原綁在「第一批 bars 到位」，首查失敗後可能把線畫到別支股票上
+
+- **來源任務**：[share2](task-pool/share2.md)（2026-07-23）
+- **狀況**：`App.tsx` 把解出的 `lines` 放進 `pendingLinesRef`，由一個依賴 `[bars]` 的 effect 在 `bars.length > 0` 時一次補上（延後是必要的：`ChartContainer` 在 `stockNo` 變動含首次掛載時會 `clearAll()`，太早加會被清掉）。但這個 pending **沒有綁定「當初要還原的是哪支股票」**：若還原當下的查詢失敗（`error` 分支不 render `ChartContainer`，`chartRef` 為 null），pending 會一直留著，使用者接著改查另一支股票、資料成功到位時，這批線就會被畫到**新的股票**上。
+- **影響**：需要「開分享連結 → 第一次查詢失敗 → 不重新整理直接改查別支」這串操作才會觸發，日常不易遇到；症狀是線條出現在不相干的股票上（座標仍是原本的 time/price，位置多半明顯不合理）。另一個較小的副作用：pending 未清空期間 hash 同步被擋住，網址不會跟著使用者的操作更新。
+- **建議**：把 pending 改成 `{ stockNo, lines }`，還原 effect 先比對 `stockNo` 相符才補線、不符就直接丟棄 pending（並解除 hash 同步的封鎖）。改動集中在 `App.tsx` 的兩個 effect，成本很低，等有元件測試環境時可一併補上回歸測試。
+- **對應任務**：暫無（defer，觸發條件狹窄；下次動到 `App.tsx` 還原流程時一併處理）。

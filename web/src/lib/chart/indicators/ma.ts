@@ -113,6 +113,7 @@ function mount(
 
 export const MaIndicator: IndicatorDefinition<MaPoint[]> = {
   id: 'ma',
+  urlCode: 'ma',
   label: '移動平均線（MA）',
   placement: 'overlay',
   paramsSchema: [

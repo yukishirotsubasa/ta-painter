@@ -85,6 +85,11 @@ export interface IndicatorMountHandle {
  */
 export interface IndicatorDefinition<TValue = unknown> {
   readonly id: string;
+  /**
+   * URL 分享用的穩定短代碼（share1），與 `id` 分離：`id` 可隨重構更名，`urlCode` 一旦發布就不得更動，
+   * 否則既有分享連結會解不出該指標。全域唯一，僅使用 `[a-z0-9]`（不含編碼用的分隔字元）。
+   */
+  readonly urlCode: string;
   readonly label: string;
   readonly placement: 'overlay' | 'separate-pane';
   readonly paramsSchema: IndicatorParamSchema[];

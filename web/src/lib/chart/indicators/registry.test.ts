@@ -5,6 +5,7 @@ import { clearIndicators, getIndicator, listIndicators, registerIndicator } from
 function createMockIndicator(id: string): IndicatorDefinition<number> {
   return {
     id,
+    urlCode: id,
     label: `Mock Indicator ${id}`,
     placement: 'overlay',
     paramsSchema: [],

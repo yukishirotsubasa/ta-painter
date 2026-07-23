@@ -146,6 +146,7 @@ function mount(
 
 export const MacdIndicator: IndicatorDefinition<MacdPoint[]> = {
   id: 'macd',
+  urlCode: 'md',
   label: 'MACD',
   placement: 'separate-pane',
   paramsSchema: [

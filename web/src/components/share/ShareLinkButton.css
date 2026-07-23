@@ -1,0 +1,21 @@
+.share-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-link-button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.share-link-feedback {
+  font-size: 12px;
+  color: var(--accent);
+}

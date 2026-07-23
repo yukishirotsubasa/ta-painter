@@ -5,6 +5,7 @@ import { numberParam, type IndicatorDefinition, type IndicatorParamValues } from
 /** Mock 指標：對 close 取最近 params.period 天的平均值，純粹依 bars/params 計算，無外部狀態。 */
 const MockAverageIndicator: IndicatorDefinition<number[]> = {
   id: 'mock-average',
+  urlCode: 'mock',
   label: 'Mock Average',
   placement: 'overlay',
   paramsSchema: [{ key: 'period', label: 'Period', default: 3 }],

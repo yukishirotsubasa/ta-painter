@@ -75,6 +75,12 @@ class DrawingController {
   // --- 顏色 API（drawing7） ---
   setDrawingColor(color: string): void; // 只影響「之後才開始畫」的線
   getDrawingColor(): string;
+
+  // --- 還原 API（share2） ---
+  addLine(
+    points: readonly [TrendLinePoint, TrendLinePoint],
+    style?: Partial<TrendLineStyle>,
+  ): string; // 回傳新線 id
 }
 ```
 
@@ -85,9 +91,11 @@ class DrawingController {
 `DrawingController` **不直接交給 `App`**，只透過三個窄介面往外接（`components/chart/ChartContainer.tsx`）：
 
 ```tsx
-/** 圖表的指令式介面：只曝光側邊欄真正需要的操作。share2 還原線條時在此加 addLine()。 */
+/** 圖表的指令式介面：只曝光側邊欄／URL 還原真正需要的操作。 */
 export interface ChartHandle {
   deleteLine(id: string): void;
+  /** share2：圖表尚未建立時回傳 null，其餘同 DrawingController.addLine()。 */
+  addLine(points: readonly [TrendLinePoint, TrendLinePoint], style?: Partial<TrendLineStyle>): string | null;
 }
 
 <ChartContainer
@@ -111,6 +119,14 @@ export interface ChartHandle {
 - `deleteLine(id)`：刪除指定 id 的線（`splice` 移除 + `series.detachPrimitive()` 卸載），只影響該條，其餘不受影響；找不到 id 則 no-op（不 detach、不觸發 `onLinesChange`）。若刪的是目前高亮中的線，內部高亮狀態一併重置。
 - `highlightLine(id | null)`：高亮指定 id 的線（沿用 `TrendLinePrimitive.setSelected(true)` 的加粗＋端點把手視覺），傳 `null` 取消高亮；相同目標重複呼叫為 no-op。高亮與畫線模式（`setEnabled`）獨立，非畫線模式下也可高亮。
 - `dispose()`：`setEnabled(false)` + `clearAll()` 之外，額外 `linesChangeListeners.clear()` 清掉所有訂閱者。
+
+### 直接建線：`addLine()`（share2）
+
+`addLine(points, style?)` 讓「不經拖曳事件」也能建立線條，供 URL 分享還原使用（見 [share.md](share.md)）：
+
+- 內部走的是**與拖曳路徑完全相同**的收尾邏輯——`new TrendLinePrimitive(style)` → `series.attachPrimitive()` → 同一個 `nextLineId()` 序號 → 推進 `lines` 陣列 → `emitLinesChange()`。因此還原出來的線在清單顯示、`highlightLine()`、`deleteLine()`、`clearAll()` 上與手畫的線完全等價，id 序號也共用同一條（還原 2 條後手畫的第一條是 `line-3`，不會撞號）。
+- `style` 省略的欄位沿用 `TrendLinePrimitive` 的預設，`color` 未指定時取目前的 `drawingColor`。
+- **沒有放寬 `TrendLinePrimitive.style` 的 `readonly`**：樣式只在 constructor 帶入，drawing7「畫出後不可改色」的保證不受影響。
 
 ### 線條顏色（drawing7）
 

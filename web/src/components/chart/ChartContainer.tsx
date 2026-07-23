@@ -13,15 +13,18 @@ import { UP_COLOR, DOWN_COLOR, DEFAULT_DRAWING_LINE_COLOR } from '../../lib/char
 import { getIndicator } from '../../lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorMountHandle, PaneIndexAllocator } from '../../lib/chart/indicators/types';
 import { DrawingController, type DrawnLine } from '../../lib/chart/drawing/drawingController';
+import type { TrendLinePoint, TrendLineStyle } from '../../lib/chart/drawing/trendLinePrimitive';
 import type { OhlcvBar } from '../../lib/data/types';
 import './ChartContainer.css';
 
 /**
  * 圖表對外的指令式介面（sidebar3）：只曝光側邊欄真正需要的操作，
- * 不把整個 `DrawingController` 交出去。share2 還原線條時在此加 `addLine()`。
+ * 不把整個 `DrawingController` 交出去。
  */
 export interface ChartHandle {
   deleteLine(id: string): void;
+  /** share2 的 URL 還原：直接以邏輯座標＋樣式重建線條，回傳新線 id（圖表尚未建立時回傳 `null`）。 */
+  addLine(points: readonly [TrendLinePoint, TrendLinePoint], style?: Partial<TrendLineStyle>): string | null;
 }
 
 interface ChartContainerProps {
@@ -195,6 +198,7 @@ export function ChartContainer({
     ref,
     () => ({
       deleteLine: (id: string) => internalDrawingControllerRef.current?.deleteLine(id),
+      addLine: (points, style) => internalDrawingControllerRef.current?.addLine(points, style) ?? null,
     }),
     [],
   );
