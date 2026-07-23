@@ -9,7 +9,7 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts';
 import { createPaneIndexAllocator } from '../../lib/chart/paneIndexAllocator';
-import { UP_COLOR, DOWN_COLOR } from '../../lib/chart/colors';
+import { UP_COLOR, DOWN_COLOR, DEFAULT_DRAWING_LINE_COLOR } from '../../lib/chart/colors';
 import { getIndicator } from '../../lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorMountHandle, PaneIndexAllocator } from '../../lib/chart/indicators/types';
 import { DrawingController } from '../../lib/chart/drawing/drawingController';
@@ -21,6 +21,8 @@ interface ChartContainerProps {
   indicators?: IndicatorInstance[];
   /** 開啟時關閉原生 pan/zoom，按下拖曳畫趨勢線（拖曳中即時預覽，放開定案）。 */
   drawingMode?: boolean;
+  /** 畫線工具列目前選色（drawing7）：只套用到之後畫出的新線，既有線畫完即固定不可改色。 */
+  drawingColor?: string;
   /** 股票代號，變更時清空目前所有畫線（drawing3）。 */
   stockNo?: string;
 }
@@ -48,7 +50,13 @@ function toVolumeData(bars: OhlcvBar[]): HistogramData[] {
   }));
 }
 
-export function ChartContainer({ data, indicators = [], drawingMode = false, stockNo }: ChartContainerProps) {
+export function ChartContainer({
+  data,
+  indicators = [],
+  drawingMode = false,
+  drawingColor = DEFAULT_DRAWING_LINE_COLOR,
+  stockNo,
+}: ChartContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -146,6 +154,10 @@ export function ChartContainer({ data, indicators = [], drawingMode = false, sto
   useEffect(() => {
     drawingControllerRef.current?.setEnabled(drawingMode);
   }, [drawingMode]);
+
+  useEffect(() => {
+    drawingControllerRef.current?.setDrawingColor(drawingColor);
+  }, [drawingColor]);
 
   useEffect(() => {
     drawingControllerRef.current?.clearAll();

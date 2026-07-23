@@ -6,6 +6,7 @@ import {
   type MouseEventParams,
   type Time,
 } from 'lightweight-charts';
+import { DEFAULT_DRAWING_LINE_COLOR } from '../colors';
 import { TrendLinePrimitive, type TrendLinePoint } from './trendLinePrimitive';
 
 export interface DrawingControllerOptions {
@@ -18,6 +19,10 @@ export interface DrawingControllerOptions {
 export interface DrawnLine {
   id: string;
   points: readonly [TrendLinePoint, TrendLinePoint] | null;
+  /** 該線的顏色（drawing7），畫線當下決定、之後不可更改，供側邊欄清單顯示色塊。 */
+  color: string;
+  /** 該線目前的線寬（drawing7），僅入資料結構，UI 暫不開放調整。 */
+  width: number;
 }
 
 type LinesChangeListener = (lines: DrawnLine[]) => void;
@@ -39,6 +44,9 @@ const MAIN_PANE_INDEX = 0;
  * drawing6：每條線帶穩定 id，對外曝光 `getLines()`/`onLinesChange()`/`deleteLine()`/`highlightLine()`
  * 供 React／側邊欄清單（sidebar3）檢視、刪除與高亮；畫布點擊選取（hitTest/選取/鍵盤刪除）整條路徑已移除，
  * 選取與刪除改由側邊欄清單負責。
+ *
+ * drawing7：`setDrawingColor()` 決定之後畫出的新線顏色；顏色只能在畫線前指定，線一旦畫出就固定不可改
+ * （選線改色因觸控/桌面上選取單條線的操作成本過高而不提供）。
  */
 export class DrawingController {
   private readonly chart: IChartApi;
@@ -52,6 +60,8 @@ export class DrawingController {
   private enabled = false;
 
   private lineIdSeq = 0;
+  /** 目前選色（drawing7）：只影響「之後畫出的新線」，包含拖曳中尚未定案的那條在內的既有線都不受影響。 */
+  private drawingColor = DEFAULT_DRAWING_LINE_COLOR;
   /** 目前被側邊欄高亮的線（沿用 primitive 的 selected 視覺：加粗＋端點把手）。 */
   private highlightedLine: TrendLinePrimitive | null = null;
   private readonly linesChangeListeners = new Set<LinesChangeListener>();
@@ -114,7 +124,23 @@ export class DrawingController {
 
   /** 目前所有已定案線條的快照（id + 邏輯座標），不含拖曳中的 `activeLine`。 */
   getLines(): DrawnLine[] {
-    return this.lines.map(({ id, primitive }) => ({ id, points: primitive.points }));
+    return this.lines.map(({ id, primitive }) => ({
+      id,
+      points: primitive.points,
+      color: primitive.style.color,
+      width: primitive.style.width,
+    }));
+  }
+
+  // --- 顏色 API（drawing7） ---
+
+  /** 設定接下來新畫線要用的顏色；已畫出的線（含拖曳中的預覽線）不受影響。 */
+  setDrawingColor(color: string): void {
+    this.drawingColor = color;
+  }
+
+  getDrawingColor(): string {
+    return this.drawingColor;
   }
 
   /** 訂閱線清單變化（畫線／刪除／切股清除時觸發），回傳取消訂閱函式。 */
@@ -238,7 +264,7 @@ export class DrawingController {
     if (price === null) return;
 
     if (!this.activeLine) {
-      this.activeLine = new TrendLinePrimitive();
+      this.activeLine = new TrendLinePrimitive({ color: this.drawingColor });
       this.series.attachPrimitive(this.activeLine);
     }
     this.activeLine.setPoints([this.anchor, { time: param.time, price }]);

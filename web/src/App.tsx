@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ChartContainer } from './components/chart/ChartContainer';
 import { ChartToolbar } from './components/chart/ChartToolbar';
+import { DrawingToolbar } from './components/chart/DrawingToolbar';
 import { IndicatorPanel } from './components/chart/IndicatorPanel';
+import { DEFAULT_DRAWING_LINE_COLOR } from './lib/chart/colors';
 import './lib/chart/indicators/ma';
 import './lib/chart/indicators/bollinger';
 import './lib/chart/indicators/macd';
@@ -30,6 +32,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [indicators, setIndicators] = useState<IndicatorInstance[]>([]);
   const [drawingMode, setDrawingMode] = useState(false);
+  const [drawingColor, setDrawingColor] = useState(DEFAULT_DRAWING_LINE_COLOR);
 
   function addIndicator(definitionId: string) {
     const definition = getIndicator(definitionId);
@@ -69,14 +72,12 @@ function App() {
       <header className="app-header">
         <h1>TA Painter</h1>
         <ChartToolbar stockNo={stockNo} loading={progress !== null} onSubmit={setStockNo} />
-        <button
-          type="button"
-          className="drawing-toggle"
-          aria-pressed={drawingMode}
-          onClick={() => setDrawingMode((prev) => !prev)}
-        >
-          {drawingMode ? '畫線模式：開' : '畫線模式：關'}
-        </button>
+        <DrawingToolbar
+          drawingMode={drawingMode}
+          onDrawingModeChange={setDrawingMode}
+          color={drawingColor}
+          onColorChange={setDrawingColor}
+        />
         {progress && (
           <div className="progress" role="progressbar" aria-valuenow={progress.loaded} aria-valuemax={progress.total}>
             <div className="progress-bar" style={{ width: `${(progress.loaded / progress.total) * 100}%` }} />
@@ -95,7 +96,13 @@ function App() {
       {error ? (
         <p className="app-error">{error}</p>
       ) : (
-        <ChartContainer data={bars} indicators={indicators} drawingMode={drawingMode} stockNo={stockNo} />
+        <ChartContainer
+          data={bars}
+          indicators={indicators}
+          drawingMode={drawingMode}
+          drawingColor={drawingColor}
+          stockNo={stockNo}
+        />
       )}
     </div>
   );

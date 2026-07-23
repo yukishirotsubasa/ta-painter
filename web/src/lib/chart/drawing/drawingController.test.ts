@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IChartApi, ISeriesApi, ISeriesPrimitive, MouseEventParams, Time } from 'lightweight-charts';
 import { DrawingController } from './drawingController';
+import { DEFAULT_DRAWING_LINE_COLOR } from '../colors';
+import { DEFAULT_TREND_LINE_WIDTH } from './trendLinePrimitive';
 
 type Listener = (event: unknown) => void;
 
@@ -315,5 +317,87 @@ describe('DrawingController line list API (drawing6)', () => {
     controller.highlightLine('line-1');
     controller.deleteLine('line-1');
     expect(() => controller.highlightLine(null)).not.toThrow();
+  });
+});
+
+describe('DrawingController color API (drawing7)', () => {
+  let fakeWindow: ReturnType<typeof createFakeEventTarget>;
+
+  beforeEach(() => {
+    fakeWindow = createFakeEventTarget();
+    vi.stubGlobal('window', fakeWindow);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function drawSecondLine(
+    container: ReturnType<typeof createFakeContainer>,
+    fireCrosshairMove: (param: MouseEventParams<Time>) => void,
+  ) {
+    container.dispatch('mousedown', { clientX: 100, clientY: 10 });
+    fireCrosshairMove({ point: { x: 150, y: 60 }, time: 150 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
+    fakeWindow.dispatch('mouseup', {});
+  }
+
+  function setup() {
+    const { chart, fireCrosshairMove } = createFakeChart();
+    const series = createFakeSeries(chart);
+    const container = createFakeContainer();
+    const controller = new DrawingController({ chart, series, container });
+    controller.setEnabled(true);
+    return { controller, container, series, fireCrosshairMove };
+  }
+
+  it('new lines use the current drawing color; each line keeps its own', () => {
+    const { controller, container, fireCrosshairMove } = setup();
+
+    expect(controller.getDrawingColor()).toBe(DEFAULT_DRAWING_LINE_COLOR);
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+
+    controller.setDrawingColor('#ff0000');
+    drawSecondLine(container, fireCrosshairMove);
+
+    expect(controller.getLines().map((line) => line.color)).toEqual([DEFAULT_DRAWING_LINE_COLOR, '#ff0000']);
+  });
+
+  it('setDrawingColor() does not repaint lines that were already drawn', () => {
+    const { controller, container, fireCrosshairMove } = setup();
+
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+    controller.setDrawingColor('#00ff00');
+
+    expect(controller.getLines()[0].color).toBe(DEFAULT_DRAWING_LINE_COLOR);
+  });
+
+  it('exposes no API to recolor an existing line (color is fixed once drawn)', () => {
+    const { controller } = setup();
+
+    expect('setLineColor' in controller).toBe(false);
+  });
+
+  it('getLines() exposes width alongside color (structure only, no UI yet)', () => {
+    const { controller, container, fireCrosshairMove } = setup();
+
+    drawOneLine(container, fireCrosshairMove, fakeWindow);
+
+    expect(controller.getLines()[0].width).toBe(DEFAULT_TREND_LINE_WIDTH);
+  });
+
+  it('changing the color mid-drag does not affect the in-progress line (color is fixed at draw start)', () => {
+    const { controller, container, series, fireCrosshairMove } = setup();
+
+    container.dispatch('mousedown', { clientX: 10, clientY: 10 });
+    fireCrosshairMove({ point: { x: 50, y: 60 }, time: 50 as unknown as Time, paneIndex: 0 } as MouseEventParams<Time>);
+    controller.setDrawingColor('#ff00ff');
+    fakeWindow.dispatch('mouseup', {});
+
+    const primitive = series.attachPrimitive.mock.calls[0][0] as { style: { color: string } };
+    expect(primitive.style.color).toBe(DEFAULT_DRAWING_LINE_COLOR);
+    expect(controller.getLines()[0].color).toBe(DEFAULT_DRAWING_LINE_COLOR);
+    // 之後才開始畫的線才吃新顏色。
+    drawSecondLine(container, fireCrosshairMove);
+    expect(controller.getLines()[1].color).toBe('#ff00ff');
   });
 });

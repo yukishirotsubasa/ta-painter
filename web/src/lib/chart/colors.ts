@@ -11,3 +11,6 @@ export const DOWN_COLOR = '#ef5350';
 
 /** lightweight-charts LineSeries 的預設線色，作為各指標線色參數的預設值。 */
 export const DEFAULT_LINE_COLOR = '#2196f3';
+
+/** 手繪趨勢線的預設顏色（drawing7），畫線工具列選色器的初始值與新線 fallback 皆用它。 */
+export const DEFAULT_DRAWING_LINE_COLOR = '#f5a623';

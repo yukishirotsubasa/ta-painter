@@ -25,24 +25,6 @@ body,
   margin: 0;
 }
 
-.drawing-toggle {
-  font: inherit;
-  font-size: 13px;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 10px;
-  cursor: pointer;
-}
-
-.drawing-toggle[aria-pressed='true'] {
-  color: var(--accent);
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-  font-weight: 600;
-}
-
 .progress {
   position: relative;
   flex: 1;

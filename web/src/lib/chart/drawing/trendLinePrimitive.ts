@@ -10,10 +10,20 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { DEFAULT_DRAWING_LINE_COLOR } from '../colors';
 
 export interface TrendLinePoint {
   time: Time;
   price: number;
+}
+
+/**
+ * 線層級樣式（drawing7）：`color` 於建立時由畫線工具列的選色決定，線畫完後即固定不可更改；
+ * `width` 目前僅入結構、UI 尚未開放。
+ */
+export interface TrendLineStyle {
+  color: string;
+  width: number;
 }
 
 interface PixelPoint {
@@ -21,38 +31,41 @@ interface PixelPoint {
   y: Coordinate;
 }
 
-const LINE_COLOR = '#f5a623';
-const LINE_WIDTH = 2;
-const SELECTED_LINE_WIDTH = 3;
+export const DEFAULT_TREND_LINE_WIDTH = 2;
+
+/** 被選取時在該線自身 `width` 上加粗的量，讓不同 `width` 的線選取後都有一致的視覺回饋。 */
+const SELECTED_WIDTH_DELTA = 1;
 const SELECTED_HANDLE_RADIUS = 4;
 
 class TrendLinePaneRenderer implements IPrimitivePaneRenderer {
   private readonly p1: PixelPoint | null;
   private readonly p2: PixelPoint | null;
   private readonly selected: boolean;
+  private readonly style: TrendLineStyle;
 
-  constructor(p1: PixelPoint | null, p2: PixelPoint | null, selected: boolean) {
+  constructor(p1: PixelPoint | null, p2: PixelPoint | null, selected: boolean, style: TrendLineStyle) {
     this.p1 = p1;
     this.p2 = p2;
     this.selected = selected;
+    this.style = style;
   }
 
   draw(target: CanvasRenderingTarget2D): void {
-    const { p1, p2, selected } = this;
+    const { p1, p2, selected, style } = this;
     if (!p1 || !p2) return;
 
     target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
       ctx.save();
       ctx.scale(scope.horizontalPixelRatio, scope.verticalPixelRatio);
-      ctx.strokeStyle = LINE_COLOR;
-      ctx.lineWidth = selected ? SELECTED_LINE_WIDTH : LINE_WIDTH;
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = selected ? style.width + SELECTED_WIDTH_DELTA : style.width;
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
       if (selected) {
-        ctx.fillStyle = LINE_COLOR;
+        ctx.fillStyle = style.color;
         for (const p of [p1, p2]) {
           ctx.beginPath();
           ctx.arc(p.x, p.y, SELECTED_HANDLE_RADIUS, 0, Math.PI * 2);
@@ -69,6 +82,7 @@ class TrendLinePaneView implements IPrimitivePaneView {
   private p1: PixelPoint | null = null;
   private p2: PixelPoint | null = null;
   private selected = false;
+  private style: TrendLineStyle = { color: DEFAULT_DRAWING_LINE_COLOR, width: DEFAULT_TREND_LINE_WIDTH };
 
   constructor(source: TrendLinePrimitive) {
     this.source = source;
@@ -81,6 +95,7 @@ class TrendLinePaneView implements IPrimitivePaneView {
     const points = this.source.points;
 
     this.selected = this.source.selected;
+    this.style = { ...this.source.style };
 
     if (!chart || !series || !points) {
       this.p1 = null;
@@ -93,7 +108,7 @@ class TrendLinePaneView implements IPrimitivePaneView {
   }
 
   renderer(): IPrimitivePaneRenderer | null {
-    return new TrendLinePaneRenderer(this.p1, this.p2, this.selected);
+    return new TrendLinePaneRenderer(this.p1, this.p2, this.selected, this.style);
   }
 }
 
@@ -117,9 +132,15 @@ export class TrendLinePrimitive implements ISeriesPrimitive<Time> {
   series: ISeriesApi<SeriesType, Time> | null = null;
   points: [TrendLinePoint, TrendLinePoint] | null = null;
   selected = false;
+  /** 線層級樣式（drawing7）；renderer 直接讀這裡，不再用模組級寫死色寬。建立後不可變更。 */
+  readonly style: TrendLineStyle;
 
   private readonly paneView = new TrendLinePaneView(this);
   private requestUpdateFn: (() => void) | null = null;
+
+  constructor(style?: Partial<TrendLineStyle>) {
+    this.style = { color: DEFAULT_DRAWING_LINE_COLOR, width: DEFAULT_TREND_LINE_WIDTH, ...style };
+  }
 
   attached(param: SeriesAttachedParameter<Time>): void {
     this.chart = param.chart;
