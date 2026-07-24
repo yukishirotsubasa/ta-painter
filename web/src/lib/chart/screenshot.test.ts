@@ -3,8 +3,10 @@ import type { IChartApi } from 'lightweight-charts';
 import {
   canvasToPngBlob,
   canvasToPngBlobSync,
+  composeWithHeaderLabel,
   fillCanvasBackground,
   resolvePageBackgroundColor,
+  resolvePageHeadingColor,
   takeChartScreenshotBlob,
   takeChartScreenshotBlobSync,
   takeChartScreenshotCanvas,
@@ -134,6 +136,133 @@ describe('takeChartScreenshotCanvas', () => {
     takeChartScreenshotCanvas(chart);
 
     expect(fillStyleAtFill).toBe('#123456');
+  });
+});
+
+/** 標題列合成會用到繪圖與量測方法，比 fillCanvasBackground 的假 context 多幾支。 */
+function createFakeHeaderContext() {
+  return {
+    fillRect: vi.fn(),
+    drawImage: vi.fn(),
+    fillText: vi.fn(),
+    fillStyle: '' as string,
+    font: '' as string,
+    textAlign: '' as string,
+    textBaseline: '' as string,
+  };
+}
+
+/** 把 `document.createElement('canvas')` 換成假 canvas，回傳它與其 context 供斷言。 */
+function stubCreatedCanvas(context: unknown = createFakeHeaderContext()) {
+  const created = { width: 0, height: 0, getContext: vi.fn(() => context) };
+  vi.stubGlobal('document', {
+    documentElement: {},
+    createElement: vi.fn(() => created as unknown as HTMLCanvasElement),
+  });
+  return { created, context };
+}
+
+describe('composeWithHeaderLabel', () => {
+  const STYLE = { backgroundColor: '#16171d', textColor: '#f3f4f6', scale: 2 };
+
+  it('輸出 canvas 寬度不變、高度多出依 scale 放大的標題列', () => {
+    const { created } = stubCreatedCanvas();
+    const { canvas } = createFakeCanvas();
+
+    const out = composeWithHeaderLabel(canvas, '台積電 2330', STYLE);
+
+    // 標題列 34 CSS px × scale 2 = 68 device px。
+    expect(created.width).toBe(800);
+    expect(created.height).toBe(600 + 68);
+    expect(out).toBe(created as unknown as HTMLCanvasElement);
+  });
+
+  it('先鋪滿底色，再把圖表貼在標題列下方', () => {
+    const context = createFakeHeaderContext();
+    stubCreatedCanvas(context);
+    const { canvas } = createFakeCanvas();
+    let fillStyleAtRect = '';
+    context.fillRect.mockImplementation(() => {
+      fillStyleAtRect = context.fillStyle;
+    });
+
+    composeWithHeaderLabel(canvas, '台積電 2330', STYLE);
+
+    expect(fillStyleAtRect).toBe('#16171d');
+    expect(context.fillRect).toHaveBeenCalledWith(0, 0, 800, 668);
+    expect(context.drawImage).toHaveBeenCalledWith(canvas, 0, 68);
+  });
+
+  it('標題文字依 scale 放大，垂直置中於標題列、左側留內距', () => {
+    const context = createFakeHeaderContext();
+    stubCreatedCanvas(context);
+    const { canvas } = createFakeCanvas();
+    let fillStyleAtText = '';
+    context.fillText.mockImplementation(() => {
+      fillStyleAtText = context.fillStyle;
+    });
+
+    composeWithHeaderLabel(canvas, '台積電 2330', STYLE);
+
+    // 字級 17 × 2 = 34px、左內距 12 × 2 = 24、基線置中於 68 / 2 = 34。
+    expect(context.font).toContain('34px');
+    expect(context.textBaseline).toBe('middle');
+    expect(context.fillText).toHaveBeenCalledWith('台積電 2330', 24, 34);
+    expect(fillStyleAtText).toBe('#f3f4f6');
+  });
+
+  it('scale=1 時不放大（低 DPI 螢幕）', () => {
+    const { created } = stubCreatedCanvas();
+    const { canvas } = createFakeCanvas();
+
+    composeWithHeaderLabel(canvas, '2330', { ...STYLE, scale: 1 });
+
+    expect(created.height).toBe(600 + 34);
+  });
+
+  it('取不到 2d context 時退回原圖，不讓整個截圖失敗', () => {
+    stubCreatedCanvas(null);
+    const { canvas } = createFakeCanvas();
+
+    expect(composeWithHeaderLabel(canvas, '2330', STYLE)).toBe(canvas);
+  });
+});
+
+describe('resolvePageHeadingColor', () => {
+  it('讀 documentElement 的 --text-h', () => {
+    vi.stubGlobal('document', { documentElement: {} });
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => ' #f3f4f6 ' }));
+    expect(resolvePageHeadingColor()).toBe('#f3f4f6');
+  });
+
+  it('--text-h 不存在時退回預設文字色', () => {
+    vi.stubGlobal('document', { documentElement: {} });
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '' }));
+    expect(resolvePageHeadingColor()).toBe('#f3f4f6');
+  });
+});
+
+describe('takeChartScreenshotCanvas 的標題列', () => {
+  it('省略 headerLabel 時不合成，直接回傳圖表 canvas', () => {
+    const { created } = stubCreatedCanvas();
+    const { canvas } = createFakeCanvas();
+    const { chart } = createFakeChart(canvas);
+
+    expect(takeChartScreenshotCanvas(chart, { backgroundColor: null })).toBe(canvas);
+    expect(created.height).toBe(0);
+  });
+
+  it('帶 headerLabel 時回傳加上標題列的新 canvas', () => {
+    const { created } = stubCreatedCanvas();
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '#f3f4f6' }));
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+    const { canvas } = createFakeCanvas();
+    const { chart } = createFakeChart(canvas);
+
+    const out = takeChartScreenshotCanvas(chart, { backgroundColor: '#16171d', headerLabel: '台積電 2330' });
+
+    expect(out).toBe(created as unknown as HTMLCanvasElement);
+    expect(created.height).toBe(600 + 34);
   });
 });
 

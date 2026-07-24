@@ -12,16 +12,18 @@ const FEEDBACK_TEXT: Record<Exclude<CopyStatus, 'idle'>, string> = {
 };
 
 /**
- * 分享 URL 按鈕（share2）：目前畫面狀態本來就持續同步在網址列的 hash 上，
- * 所以這顆就只是把目前網址複製到剪貼簿，不需要另外組連結。
+ * 分享 URL 按鈕（share2）：網址平時保持乾淨（不隨操作同步 hash，見 `docs/share.md` 的「分享連結的產生時機」），
+ * 按下才由 `buildShareUrl()` 用目前畫面狀態即時組出分享連結再複製到剪貼簿。
  * 按鈕文字帶上「URL」與旁邊的「複製圖片」「分享圖片」區隔，避免只寫「分享」看不出分享的是什麼。
  */
 interface ShareLinkButtonProps {
+  /** 用目前畫面狀態即時組出分享連結；編碼失敗時可丟例外，這裡一律走失敗提示。 */
+  buildShareUrl: () => string;
   /** 行動版精簡工具列（responsive2）：按鈕文字縮短為「連結」，語意由旁邊的「分享圖」對比出來。 */
   compact?: boolean;
 }
 
-export function ShareLinkButton({ compact = false }: ShareLinkButtonProps = {}) {
+export function ShareLinkButton({ buildShareUrl, compact = false }: ShareLinkButtonProps) {
   const [status, setStatus] = useState<CopyStatus>('idle');
 
   useEffect(() => {
@@ -32,8 +34,9 @@ export function ShareLinkButton({ compact = false }: ShareLinkButtonProps = {}) 
 
   async function copyCurrentUrl() {
     try {
-      // 非安全連線（http）或瀏覽器不支援時 clipboard 會是 undefined／writeText 會 reject，一律走失敗提示。
-      await navigator.clipboard.writeText(window.location.href);
+      // 非安全連線（http）或瀏覽器不支援時 clipboard 會是 undefined／writeText 會 reject；
+      // buildShareUrl 編碼失敗也可能丟例外，一律走失敗提示。
+      await navigator.clipboard.writeText(buildShareUrl());
       setStatus('copied');
     } catch {
       setStatus('failed');

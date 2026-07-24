@@ -7,6 +7,7 @@ import {
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
+  type LogicalRange,
 } from 'lightweight-charts';
 import { createPaneIndexAllocator } from '../../lib/chart/paneIndexAllocator';
 import {
@@ -35,6 +36,8 @@ import './ChartContainer.css';
  */
 export interface ChartHandle {
   deleteLine(id: string): void;
+  /** 清空目前所有畫線（sidebar「清空所有畫線」）；確認與否由呼叫端負責。 */
+  clearAllLines(): void;
   /** share2 的 URL 還原：直接以邏輯座標＋樣式重建線條，回傳新線 id（圖表尚未建立時回傳 `null`）。 */
   addLine(points: readonly [TrendLinePoint, TrendLinePoint], style?: Partial<TrendLineStyle>): string | null;
   /** share3 的圖片分享來源：目前畫面（含手繪線）的 PNG blob，圖表尚未建立時回傳 `null`。 */
@@ -65,9 +68,21 @@ interface ChartContainerProps {
   onLinesChange?: (lines: DrawnLine[]) => void;
   /** 側邊欄目前選取的線，`null` 取消高亮。 */
   highlightedLineId?: string | null;
+  /**
+   * 可視範圍逼近左緣時回報「需要更舊的資料」（往前動態載入，見 `docs/data-layer.md`）。
+   * 由呼叫端負責防重入與「已到最早」的判斷——本元件只轉述畫面狀態，不管資料怎麼來。
+   */
+  onNeedOlderData?: () => void;
 }
 
 const VOLUME_PANE_HEIGHT = 120;
+
+/**
+ * 可視邏輯範圍的左緣還剩幾根 K 棒就開始往前補資料。
+ * 左側留白時 `from` 會是負數，因此這個門檻同時涵蓋兩件事：
+ * 「資料不足以填滿畫面寬度」（初次載入後自動補到填滿）與「使用者往左捲到接近底」。
+ */
+const LOAD_OLDER_THRESHOLD = 10;
 
 function toCandlestickData(bars: OhlcvBar[]): CandlestickData[] {
   return bars.map((bar) => ({
@@ -96,6 +111,7 @@ export function ChartContainer({
   stockNo,
   onLinesChange,
   highlightedLineId = null,
+  onNeedOlderData,
 }: ChartContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -104,6 +120,14 @@ export function ChartContainer({
   const paneIndexAllocatorRef = useRef<PaneIndexAllocator | null>(null);
   const mountedIndicatorsRef = useRef<Map<string, MountedIndicator>>(new Map());
   const internalDrawingControllerRef = useRef<DrawingController | null>(null);
+  /**
+   * 訂閱只在掛載時建立一次（圖表實例的生命週期），但回呼身分每次 render 都會變，
+   * 因此透過 ref 轉接，讓訂閱保持穩定又永遠呼叫到最新的回呼。
+   */
+  const onNeedOlderDataRef = useRef(onNeedOlderData);
+  onNeedOlderDataRef.current = onNeedOlderData;
+  /** 上一批資料的第一根時間，用來判定這次是否為「往前補資料」（前插後的視圖保持）。 */
+  const previousFirstTimeRef = useRef<string | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -154,7 +178,16 @@ export function ChartContainer({
     });
     resizeObserver.observe(container);
 
+    // 左緣偵測：往前補完資料後 setVisibleLogicalRange 會再觸發一次本回呼，
+    // 因此「資料不足以填滿畫面」會自動一批批補到填滿，不必另外量容器寬度換算需要幾根 K 棒。
+    const onVisibleLogicalRangeChange = (range: LogicalRange | null) => {
+      if (!range) return;
+      if (range.from < LOAD_OLDER_THRESHOLD) onNeedOlderDataRef.current?.();
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
+
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
       resizeObserver.disconnect();
       for (const entry of mountedIndicators.values()) {
         entry.handle.dispose();
@@ -171,8 +204,36 @@ export function ChartContainer({
   }, []);
 
   useEffect(() => {
+    const chart = chartRef.current;
+    const previousFirstTime = previousFirstTimeRef.current;
+    const nextFirstTime = data.length > 0 ? data[0].time : null;
+
+    /*
+     * 往前補資料後若不校正，畫面會整個往左跳：`setData()` 是整批取代，
+     * 前插 N 根會讓所有邏輯索引一起位移 N。作法是記住位移量，setData 後把可視範圍平移回去，
+     * 使用者看到的 K 棒維持不變（右緣錨定）。
+     *
+     * `indexOf` 找不到（換股票時整批換掉、剛好新舊資料無交集）會回 -1，此時不校正、
+     * 交給 lightweight-charts 預設的初次定位，避免把不相干的位移套上去。
+     * 畫線是 time/price 座標，不受索引位移影響，不需處理。
+     */
+    const prependedCount =
+      chart && previousFirstTime !== null && nextFirstTime !== null && nextFirstTime < previousFirstTime
+        ? data.findIndex((bar) => bar.time === previousFirstTime)
+        : -1;
+    const visibleRangeBefore = prependedCount > 0 ? chart!.timeScale().getVisibleLogicalRange() : null;
+
     candlestickSeriesRef.current?.setData(toCandlestickData(data));
     volumeSeriesRef.current?.setData(toVolumeData(data));
+
+    if (chart && visibleRangeBefore) {
+      chart.timeScale().setVisibleLogicalRange({
+        from: visibleRangeBefore.from + prependedCount,
+        to: visibleRangeBefore.to + prependedCount,
+      });
+    }
+
+    previousFirstTimeRef.current = nextFirstTime;
   }, [data]);
 
   useEffect(() => {
@@ -205,6 +266,7 @@ export function ChartContainer({
     ref,
     () => ({
       deleteLine: (id: string) => internalDrawingControllerRef.current?.deleteLine(id),
+      clearAllLines: () => internalDrawingControllerRef.current?.clearAll(),
       addLine: (points, style) => internalDrawingControllerRef.current?.addLine(points, style) ?? null,
       takeScreenshot: async (options) => {
         const chart = chartRef.current;

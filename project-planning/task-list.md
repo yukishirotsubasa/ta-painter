@@ -99,7 +99,8 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 - `../docs/stock-list.md` — 已實作股票清單自動更新（來源／解析規則、有效性 gate 與重試、每週 workflow 與 Pages 串接）
 - `../docs/drawing.md` — 已實作畫線模組（TrendLinePrimitive、正式 DrawingController：模式切換、按下拖曳、多線陣列管理、切股清除、清單 API 與 `ChartHandle`）
 - `../docs/symbol-search.md` — 已實作前端代號搜尋（清單載入與快取、代號／名稱搜尋排序、送出前代號解析、ChartToolbar combobox）
-- `../docs/share.md` — 已實作分享（URL：ShareState schema、混合式精簡編碼格式、hash 讀寫與 App 還原順序；圖片：截圖與底色補償、剪貼簿／Web Share／下載三條輸出路徑與 user activation 處理；分享列三顆按鈕）
+- `../docs/share.md` — 已實作分享（URL：ShareState schema、混合式精簡編碼格式、hash 讀寫與 App 還原順序、分享連結改為按下才產生；圖片：截圖與底色補償、股名／代號標題列、剪貼簿／Web Share／下載三條輸出路徑與 user activation 處理；分享列三顆按鈕）
+- `../docs/persistence.md` — 已實作本機設定持久化（指標／最後代號／資料源存 localStorage）與預覽模式（分享連結開啟時隔離、不寫本機設定，附退出路徑）
 
 ---
 

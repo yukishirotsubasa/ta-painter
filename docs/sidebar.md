@@ -84,11 +84,13 @@
   selectedId={selectedLineId}
   onSelect={(id) => …}          // 只回報被點到的 id，切換規則見 lineSelection
   onDelete={(id) => chartRef.current?.deleteLine(id)}
+  onClearAll={() => …}          // 跳窗確認後 chartRef.current?.clearAllLines()
 />
 ```
 
 - 區塊標題顯示線數：`畫線（2）`。
-- 空清單顯示「尚未畫任何線」；有線時在清單上方顯示一行操作提示「點項目可高亮圖上對應線段，再點一次取消」。
+- 空清單顯示「尚未畫任何線」；有線時在清單上方顯示一列工具列：左邊是操作提示「點項目可高亮圖上對應線段，再點一次取消」，右邊是「清空所有」按鈕。
+- **「清空所有」一律跳窗確認**：`window.confirm(\`確定清空全部 ${lines.length} 條畫線？\`)` 回 `true` 才呼叫 `ChartHandle.clearAllLines()`。確認邏輯放在 `App.tsx` 的 `onClearAll`（`DrawingListPanel` 維持單純的呈現元件，只負責在有線時顯示按鈕並轉呼）。單條刪除**不**確認——一次清光多條不可逆、誤觸成本高，單條重畫成本低，兩者刻意不同調。
 - 每一項＝色塊（該線的 `color`）＋標籤＋刪除鈕。標籤由 `lib/chart/drawing/lineLabel.ts` 的 `formatLineLabel(index)` 產生，**只顯示編號 `#1`、`#2`…**：起訖日期屬內部座標資訊，刻意不揭露。
 - 選取項套用 `aria-pressed` 與 accent 高亮；圖上對應線段由 `DrawingController.highlightLine(id)` 加粗（選取時線寬為該線 `width` 的 **2 倍**）並畫出端點把手。
 - **僅提供檢視、選取、刪除**，不含畫線開關與改色（畫線模式與選色留在主畫面 header）。刪除是觸控裝置刪除單條線的唯一路徑（畫布點擊選取已於 drawing6 移除）。
@@ -109,7 +111,7 @@
 |---|---|
 | `settingsOpen` / `indicatorSectionCollapsed` / `drawingSectionCollapsed` | 設定面板開關（桌面側邊欄／行動覆蓋面板共用，responsive2 取代原本的 `sidebarCollapsed`）與兩處區塊折疊狀態 |
 | `lines` / `selectedLineId` | 畫線清單快照與目前選取；`lines` 由 `ChartContainer` 的 `onLinesChange` 回填 |
-| `chartRef: ChartHandle` | 圖表的指令式介面：`deleteLine(id)`／`addLine()`／`takeScreenshot*()`／`resize()`（見 [`drawing.md`](drawing.md)、[`share.md`](share.md)、[`responsive.md`](responsive.md)） |
+| `chartRef: ChartHandle` | 圖表的指令式介面：`deleteLine(id)`／`clearAllLines()`／`addLine()`／`takeScreenshot*()`／`resize()`（見 [`drawing.md`](drawing.md)、[`share.md`](share.md)、[`responsive.md`](responsive.md)） |
 | `notice` | 「這次沒查詢、畫面沿用前一次結果」的說明（見 [`data-layer.md`](data-layer.md)），與 `error`（查詢失敗）分開 |
 
 `onLinesChange` 以 `useCallback` 包成穩定身分，否則每次 render 都會重新訂閱 `DrawingController`。
@@ -129,6 +131,8 @@
 
 - 拖曳畫線後清單即時列出、點選高亮、刪除單條、折疊自動取消選取——皆已由使用者實測確認。
 - 使用者回饋並已修正的三項：選取高亮改為線寬 ×2（原本 +1px 太不明顯）、清單標籤移除起訖日期、側邊欄改為覆蓋式不 resize。
+
+**清空所有畫線**（2026-07-24，沙盒 Chromium + `javascript_tool`）：因沙盒無法用合成事件在 canvas 上拖曳畫線，改以**帶 2 條線的分享連結還原**取得線條，再驗證按鈕行為——確認訊息為 `確定清空全部 2 條畫線？`；`confirm` 回 `false` 時清單仍為 2 條（取消路徑不誤清）；回 `true` 後清單歸零、「清空所有」按鈕隨之消失、顯示「尚未畫任何線」。實際拖曳畫線後再清空由使用者於真實瀏覽器複測確認。
 
 ## 已知限制 / 尚未實作
 

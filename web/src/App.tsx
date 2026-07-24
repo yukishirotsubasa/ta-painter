@@ -19,10 +19,18 @@ import './lib/chart/indicators/bollinger';
 import './lib/chart/indicators/macd';
 import { getIndicator } from './lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorParamValues } from './lib/chart/indicators/types';
-import { DEFAULT_DATA_SOURCE, estimateRequestCount, fetchBars, type DataSource } from './lib/data/dataSource';
+import {
+  DEFAULT_DATA_SOURCE,
+  OLDER_BATCH_MONTHS,
+  estimateRequestCount,
+  fetchBars,
+  type DataSource,
+} from './lib/data/dataSource';
 import { classifyDataError, type DataErrorKind } from './lib/data/errors';
+import { addMonths, mergeOlderBars, previousDay } from './lib/data/history';
 import type { DateRange, FetchProgress, OhlcvBar } from './lib/data/types';
 import { screenshotFileName } from './lib/share/imageShare';
+import { loadSettings, saveSettings } from './lib/state/persistence';
 import type { ShareLine } from './lib/state/schema';
 import {
   formatShareHash,
@@ -63,16 +71,50 @@ function lastMonthsRange(months: number): DateRange {
 function App() {
   const breakpoint = useResponsive();
 
-  // 只在掛載當下讀一次 hash：之後 hash 由本 App 自己 replaceState 維護，不需要（也不該）反覆回讀。
+  // 只在掛載當下讀一次 hash：之後不再隨操作回寫 hash，也不回讀（見 docs/share.md 的「分享連結的產生時機」）。
   const [initialShare] = useState(() => readShareHash(window.location.hash));
   const restored = initialShare.status === 'ok' ? initialShare.state : null;
 
-  const [symbol, setSymbol] = useState<SymbolSelection>({ code: restored?.symbol ?? DEFAULT_STOCK_NO, market: null });
+  /*
+   * Session 模式（見 docs/persistence.md）：
+   * - hash 有合法 s= → 預覽模式：狀態全部從分享連結還原，該 session 不讀也不寫 localStorage，
+   *   避免分享內容污染使用者的本機設定（退出見下方 exitPreview）。
+   * - 否則（無 hash 或 hash 解析失敗）→ 一般模式：從 localStorage 還原本機設定。
+   */
+  const [previewMode, setPreviewMode] = useState(restored !== null);
+  const [initialSettings] = useState(() => (restored ? null : loadSettings()));
+
+  const [symbol, setSymbol] = useState<SymbolSelection>({
+    code: restored?.symbol ?? initialSettings?.symbol ?? DEFAULT_STOCK_NO,
+    market: null,
+  });
   const stockNo = symbol.code;
-  const [dataSource, setDataSource] = useState<DataSource>(restored?.prov ?? DEFAULT_DATA_SOURCE);
-  // 查詢區間目前沒有 UI，但要能被分享連結還原，因此收進 state 而非每次查詢重算。
-  const [range] = useState<DateRange>(() => restored?.range ?? lastMonthsRange(QUERY_MONTHS));
+  // 股票名稱（分享圖片的標題列用）：Web Share 走同步截圖，不能截圖當下才查清單，故先備在 state。
+  const [symbolName, setSymbolName] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<DataSource>(
+    restored?.prov ?? initialSettings?.prov ?? DEFAULT_DATA_SOURCE,
+  );
+  /**
+   * 首批查詢區間：分享連結可還原（否則取最近 QUERY_MONTHS 個月）。
+   * 這只是**起點**——實際載入範圍會隨往左捲動往前延伸，見 `earliestLoaded`。
+   */
+  const [initialRange] = useState<DateRange>(() => restored?.range ?? lastMonthsRange(QUERY_MONTHS));
   const [bars, setBars] = useState<OhlcvBar[]>([]);
+  /** 目前已載入到的最早日期：往前補一批就往前推一次。分享連結要用，故也放進 state。 */
+  const [earliestLoaded, setEarliestLoaded] = useState(initialRange.start);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  /*
+   * 往前載入的三個控制旗標一律用 ref 而非 state：`.finally()` 解鎖的時機早於 React 重新 render，
+   * 中間若又觸發左緣事件，讀 state 的舊 closure 會拿到尚未更新的區間而重複請求同一段
+   * （更糟的是重複那段不含更舊的資料 → 可視範圍不動 → 再次觸發，形成迴圈）。
+   * 改成 ref 後「已請求到哪」在送出當下就同步推進，重複觸發必然是 no-op 或推進到更舊的一批。
+   */
+  const loadingOlderRef = useRef(false);
+  /** 往前補到空資料（已達上市初期）或失敗後就不再請求，避免無限往前打。 */
+  const hasMoreHistoryRef = useRef(true);
+  const earliestLoadedRef = useRef(initialRange.start);
+  /** 目前的「資料身分」；往前查詢回來時比對，期間換過股票／資料源就丟棄結果。 */
+  const dataIdentityRef = useRef('');
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   // 帶分類是為了決定要不要在原始訊息下方追加 UPSTREAM_BLOCKED_HINT。
   const [error, setError] = useState<{ message: string; kind: DataErrorKind } | null>(null);
@@ -82,7 +124,7 @@ function App() {
     initialShare.status === 'invalid' ? SHARE_INVALID_NOTICE : null,
   );
   const [indicators, setIndicators] = useState<IndicatorInstance[]>(() =>
-    toIndicatorInstances(restored?.indicators ?? []),
+    toIndicatorInstances(restored?.indicators ?? initialSettings?.indicators ?? []),
   );
   const [drawingMode, setDrawingMode] = useState(false);
   const [drawingColor, setDrawingColor] = useState(DEFAULT_DRAWING_LINE_COLOR);
@@ -136,8 +178,7 @@ function App() {
     const chart = chartRef.current;
     if (!chart) return;
 
-    // 資料到位的是別支股票（連結那次查詢失敗後使用者改查其他代號）：線條直接丟棄，
-    // 但仍要清掉 pending，否則 hash 同步會被永久卡住（share6）。
+    // 資料到位的是別支股票（連結那次查詢失敗後使用者改查其他代號）：線條直接丟棄（share6）。
     const matched = pending.stockNo === stockNo;
     pendingLinesRef.current = null;
     if (!matched) return;
@@ -147,26 +188,39 @@ function App() {
     }
   }, [bars, stockNo]);
 
-  // 目前畫面狀態同步回 hash（share2）：用 replaceState 而非 pushState，避免灌爆瀏覽器上一頁記錄。
+  // 本機設定持久化：一般模式才寫，預覽模式（分享連結開啟）一律不寫，避免污染本機設定。
+  // 這裡也不回寫 hash——網址平時保持乾淨，分享連結改由「分享URL」按鈕即時產生（見 buildShareUrl）。
   useEffect(() => {
-    // 還原未完成前先不要寫，否則會用「還沒補上線條」的狀態覆蓋掉連結裡的線。
-    if (pendingLinesRef.current) return;
+    if (previewMode) return;
+    saveSettings({ symbol: stockNo, prov: dataSource, indicators: toShareIndicators(indicators) });
+  }, [previewMode, stockNo, dataSource, indicators]);
 
-    try {
-      const hash = formatShareHash({
-        symbol: stockNo,
-        prov: dataSource,
-        range,
-        indicators: toShareIndicators(indicators),
-        lines: toShareLines(lines),
-      });
-      window.history.replaceState(null, '', hash);
-    } catch {
-      // 編碼失敗只代表這次沒更新網址（例如出現無法編碼的參數值），不該影響畫面。
-    }
-    // `bars` 不進 hash，列在依賴裡是為了讓「上一個 effect 剛清掉 pending」的那次 commit
-    // 立刻補寫一次 hash（ref 變動不會觸發 render，否則要等下一次使用者操作才解封）。
-  }, [stockNo, dataSource, range, indicators, lines, bars]);
+  // 「分享URL」按下時才由目前狀態即時組出連結；編碼失敗（罕見）往上丟，由按鈕顯示複製失敗提示。
+  const buildShareUrl = useCallback(() => {
+    const hash = formatShareHash({
+      symbol: stockNo,
+      prov: dataSource,
+      // 分享目前**實際載入到**的範圍（會隨捲動往前延伸），對方開連結才看得到同一段。
+      range: { start: earliestLoaded, end: initialRange.end },
+      indicators: toShareIndicators(indicators),
+      lines: toShareLines(lines),
+    });
+    const { origin, pathname, search } = window.location;
+    return `${origin}${pathname}${search}${hash}`;
+  }, [stockNo, dataSource, earliestLoaded, initialRange.end, indicators, lines]);
+
+  // 退出預覽、回到本機設定：套回 localStorage 設定（沒有就回預設）、清掉分享線、拿掉 hash。
+  const exitPreview = useCallback(() => {
+    const settings = loadSettings();
+    setPreviewMode(false);
+    setSymbol({ code: settings?.symbol ?? DEFAULT_STOCK_NO, market: null });
+    setDataSource(settings?.prov ?? DEFAULT_DATA_SOURCE);
+    setIndicators(toIndicatorInstances(settings?.indicators ?? []));
+    // 分享線不持久化，退出時一併清掉（若代號有變，切股本來就會清；代號相同時這行才有作用）。
+    chartRef.current?.clearAllLines();
+    // 拿掉 hash，重整不再回到預覽。
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
 
   function addIndicator(definitionId: string) {
     const definition = getIndicator(definitionId);
@@ -183,6 +237,19 @@ function App() {
   function updateIndicatorParams(instanceId: string, params: IndicatorParamValues) {
     setIndicators((prev) => prev.map((instance) => (instance.id === instanceId ? { ...instance, params } : instance)));
   }
+
+  // 代號變動時查清單補上股票名稱：查無此代號則為 null，標題列只顯示代號。
+  useEffect(() => {
+    let cancelled = false;
+    loadStockList()
+      .then((list) => {
+        if (!cancelled) setSymbolName(findByCode(list, stockNo)?.name ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [stockNo]);
 
   // 代號可能來自下拉建議、手動輸入或（未來）URL 還原，一律回頭查清單補上市場別，
   // 順便把代號正規化成清單裡的寫法（例如 00631l → 00631L）。查無此代號則維持 null。
@@ -204,6 +271,13 @@ function App() {
   // Yahoo 對上市/上櫃通用、不需要市場別，因此代號補上市場別時不必重查；官方源才依市場別路由。
   const routingMarket = dataSource === 'official' ? symbol.market : null;
 
+  // 換股票／換資料源時重設往前載入的狀態，並讓還在飛的往前查詢作廢。
+  useEffect(() => {
+    dataIdentityRef.current = `${stockNo}|${dataSource}`;
+    loadingOlderRef.current = false;
+    setLoadingOlder(false);
+  }, [stockNo, dataSource]);
+
   useEffect(() => {
     // 官方源在市場別補上前無從路由（剛送出的代號、或代號不在清單內）：不查詢也不清空既有資料，
     // 圖表沿用前一次結果並在 header 說明原因（側邊欄資料源區塊另有路由層級的警告）。
@@ -216,11 +290,20 @@ function App() {
     const controller = new AbortController();
     setError(null);
     setNotice(null);
-    setProgress({ loaded: 0, total: estimateRequestCount(dataSource, range) });
+    setProgress({ loaded: 0, total: estimateRequestCount(dataSource, initialRange) });
+    /*
+     * 首批查詢一律從空資料開始：新舊標的的 bars 若混在一起，
+     * `ChartContainer` 的前插判定會拿舊標的的第一根時間去比對而誤判位移。
+     * 同時把往前載入的狀態歸零，讓新標的從 initialRange 重新往前延伸。
+     */
+    setBars([]);
+    setEarliestLoaded(initialRange.start);
+    earliestLoadedRef.current = initialRange.start;
+    hasMoreHistoryRef.current = true;
 
     // 進度回饋立即顯示，實際請求延後送出：連續切代號時只有最後一次會真的打到上游。
     const timer = setTimeout(() => {
-      fetchBars(dataSource, stockNo, routingMarket, range, setProgress, controller.signal)
+      fetchBars(dataSource, stockNo, routingMarket, initialRange, setProgress, controller.signal)
         .then(setBars)
         .catch((err: unknown) => {
           if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -237,10 +320,57 @@ function App() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [stockNo, dataSource, routingMarket, range]);
+  }, [stockNo, dataSource, routingMarket, initialRange]);
+
+  /**
+   * 往前補一批更舊的資料（見 docs/data-layer.md 的「往前動態載入」）。由 `ChartContainer` 在可視範圍逼近左緣時呼叫，
+   * 因此也負責「首批資料不足以填滿畫面寬度」的自動補齊——補完的 setVisibleLogicalRange
+   * 會再觸發一次左緣事件，一批批補到填滿為止。
+   */
+  const loadOlderBars = useCallback(() => {
+    // 首批還沒到位就不補：此時左緣事件只是初始渲染的雜訊，區間也還沒定案。
+    if (loadingOlderRef.current || !hasMoreHistoryRef.current || bars.length === 0) return;
+    // 官方源在市場別未知時無從路由，與首批查詢同一條守門規則。
+    if (dataSource === 'official' && routingMarket === null) return;
+
+    const identity = dataIdentityRef.current;
+    const end = previousDay(earliestLoadedRef.current);
+    const start = addMonths(earliestLoadedRef.current, -OLDER_BATCH_MONTHS[dataSource]);
+
+    loadingOlderRef.current = true;
+    // 送出當下就推進，重複觸發只會往更舊的一批走，不會再請求同一段。
+    earliestLoadedRef.current = start;
+    setLoadingOlder(true);
+
+    fetchBars(dataSource, stockNo, routingMarket, { start, end })
+      .then((older) => {
+        // 查詢期間換過股票／資料源：這批資料屬於上一個標的，丟棄。
+        if (dataIdentityRef.current !== identity) return;
+
+        if (older.length === 0) {
+          // 整批都沒有資料視為已到上市初期，就此停手（否則會一路往前空打到 1970 年）。
+          hasMoreHistoryRef.current = false;
+          return;
+        }
+        setBars((prev) => mergeOlderBars(older, prev));
+        setEarliestLoaded(start);
+      })
+      // 往前補失敗不影響已顯示的資料，靜靜停手即可（首批查詢失敗才需要顯示錯誤）。
+      .catch(() => {
+        if (dataIdentityRef.current === identity) hasMoreHistoryRef.current = false;
+      })
+      .finally(() => {
+        if (dataIdentityRef.current !== identity) return;
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      });
+  }, [bars.length, dataSource, routingMarket, stockNo]);
 
   // 行動版工具列精簡（responsive2）：標題與欄位說明只留給輔助技術，按鈕文字縮短。
   const compact = breakpoint === 'mobile';
+
+  // 分享圖片標題列：有股名時「股名 代號」，否則只有代號。
+  const shareHeaderLabel = symbolName ? `${symbolName} ${stockNo}` : stockNo;
 
   const header = (
     <>
@@ -262,12 +392,21 @@ function App() {
         compact={compact}
       />
       <ShareMenu
-        takeScreenshot={() => chartRef.current?.takeScreenshot() ?? Promise.resolve(null)}
-        takeScreenshotSync={() => chartRef.current?.takeScreenshotSync() ?? null}
+        takeScreenshot={() => chartRef.current?.takeScreenshot({ headerLabel: shareHeaderLabel }) ?? Promise.resolve(null)}
+        takeScreenshotSync={() => chartRef.current?.takeScreenshotSync({ headerLabel: shareHeaderLabel }) ?? null}
         fileName={screenshotFileName(stockNo)}
         shareTitle={`TA Painter ${stockNo}`}
+        buildShareUrl={buildShareUrl}
         compact={compact}
       />
+      {previewMode && (
+        <div className="app-preview-banner" role="status">
+          <span>正在瀏覽分享內容（不會影響你的本機設定）</span>
+          <button type="button" className="app-preview-exit" onClick={exitPreview}>
+            回到我的設定
+          </button>
+        </div>
+      )}
       {progress && (
         <div className="progress" role="progressbar" aria-valuenow={progress.loaded} aria-valuemax={progress.total}>
           <div className="progress-bar" style={{ width: `${(progress.loaded / progress.total) * 100}%` }} />
@@ -275,6 +414,11 @@ function App() {
             {progress.message ?? '載入中'}（{progress.loaded}/{progress.total}）
           </span>
         </div>
+      )}
+      {loadingOlder && (
+        <p className="app-notice" role="status">
+          載入更舊資料…
+        </p>
       )}
       {shareNotice && (
         <p className="app-notice" role="status">
@@ -318,6 +462,12 @@ function App() {
           selectedId={selectedLineId}
           onSelect={(id) => setSelectedLineId((prev) => toggleSelection(prev, id))}
           onDelete={(id) => chartRef.current?.deleteLine(id)}
+          onClearAll={() => {
+            // 一次清光多條線不可逆，先跳窗確認再清（單條刪除成本低，不另外確認）。
+            if (window.confirm(`確定清空全部 ${lines.length} 條畫線？`)) {
+              chartRef.current?.clearAllLines();
+            }
+          }}
         />
       </SidebarSection>
     </>
@@ -369,6 +519,7 @@ function App() {
             stockNo={stockNo}
             onLinesChange={handleLinesChange}
             highlightedLineId={selectedLineId}
+            onNeedOlderData={loadOlderBars}
           />
         )}
       </main>

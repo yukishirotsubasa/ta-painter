@@ -23,6 +23,16 @@ export const DATA_SOURCE_LABEL: Record<DataSource, string> = {
   official: '官方（TWSE／TPEx）',
 };
 
+/**
+ * 往前動態載入時一次往前追加的月數。兩源差距來自成本結構：
+ * Yahoo 單次請求就能取回整段，補 12 個月與補 1 個月成本相同；
+ * 官方源逐月抓取且每月之間有 300–500ms 節流，補 12 個月要等 6 秒，因此縮到 3 個月一批。
+ */
+export const OLDER_BATCH_MONTHS: Record<DataSource, number> = {
+  yahoo: 12,
+  official: 3,
+};
+
 function providerIdFor(source: DataSource, market: Market | null): string | null {
   if (source === 'yahoo') return 'yahoo';
   if (market === 'TWSE') return 'twse';

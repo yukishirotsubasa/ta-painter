@@ -22,6 +22,13 @@ import type { IChartApi } from 'lightweight-charts';
  * 軟體（多數聊天軟體、簡報）會變成黑底，因此截圖一律補上頁面底色。
  */
 const FALLBACK_BACKGROUND_COLOR = '#16171d';
+const FALLBACK_TEXT_COLOR = '#f3f4f6';
+
+/** 標題列（股票名稱與代號）的 CSS 尺寸；實際繪製時乘上 devicePixelRatio，與圖表 canvas 同比例。 */
+const HEADER_HEIGHT_CSS = 34;
+const HEADER_FONT_CSS = 17;
+const HEADER_PADDING_CSS = 12;
+const HEADER_FONT_STACK = "system-ui, 'Segoe UI', Roboto, sans-serif";
 
 export interface ChartScreenshotOptions {
   /** 是否疊上 top 畫布（十字準星與 `zOrder: 'top'` 的 primitive 所在層）。 */
@@ -30,6 +37,8 @@ export interface ChartScreenshotOptions {
   includeCrosshair?: boolean;
   /** 補在圖表底下的底色；傳 `null` 保留透明背景。省略時取頁面的 `--bg`。 */
   backgroundColor?: string | null;
+  /** 在圖表上方加一條標題列文字（例：`台積電 2330`）；省略或空字串則不加。 */
+  headerLabel?: string;
 }
 
 /** 讀目前主題的頁面底色（`index.css` 的 `--bg`，深色模式由 media query 覆寫）。 */
@@ -37,6 +46,54 @@ export function resolvePageBackgroundColor(): string {
   if (typeof document === 'undefined') return FALLBACK_BACKGROUND_COLOR;
   const value = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
   return value || FALLBACK_BACKGROUND_COLOR;
+}
+
+/** 讀目前主題的標題文字色（`index.css` 的 `--text-h`）；供標題列用。 */
+export function resolvePageHeadingColor(): string {
+  if (typeof document === 'undefined') return FALLBACK_TEXT_COLOR;
+  const value = getComputedStyle(document.documentElement).getPropertyValue('--text-h').trim();
+  return value || FALLBACK_TEXT_COLOR;
+}
+
+export interface HeaderLabelStyle {
+  /** 標題列底色（一般與截圖底色相同）。 */
+  backgroundColor: string;
+  /** 標題文字色。 */
+  textColor: string;
+  /** 相對 CSS 尺寸的縮放（devicePixelRatio），讓標題與圖表同比例、高 DPI 下字不會太小。 */
+  scale: number;
+}
+
+/**
+ * 把圖表 canvas 疊到一張「頂部多一條標題列」的新 canvas 上並回傳（見 `docs/share.md` 的「標題列」）。
+ * 依 technical-debt 維護守則，截圖後處理集中在 `takeChartScreenshotCanvas`，同步／非同步兩條路徑共用。
+ * 取不到 2d context 時退回原圖（不因加標題失敗而讓整個截圖失敗）。
+ */
+export function composeWithHeaderLabel(
+  chartCanvas: HTMLCanvasElement,
+  label: string,
+  { backgroundColor, textColor, scale }: HeaderLabelStyle,
+): HTMLCanvasElement {
+  const headerHeight = Math.round(HEADER_HEIGHT_CSS * scale);
+  const out = document.createElement('canvas');
+  out.width = chartCanvas.width;
+  out.height = chartCanvas.height + headerHeight;
+
+  const ctx = out.getContext('2d');
+  if (!ctx) return chartCanvas;
+
+  // 整張鋪底色（含標題列與圖表區）：圖表若保留透明，底色會透出來，與 fillCanvasBackground 的效果一致。
+  ctx.fillStyle = backgroundColor;
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(chartCanvas, 0, headerHeight);
+
+  ctx.fillStyle = textColor;
+  ctx.font = `600 ${Math.round(HEADER_FONT_CSS * scale)}px ${HEADER_FONT_STACK}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, Math.round(HEADER_PADDING_CSS * scale), Math.round(headerHeight / 2));
+
+  return out;
 }
 
 /**
@@ -56,11 +113,22 @@ export function fillCanvasBackground(canvas: HTMLCanvasElement, color: string): 
 /** 截圖並補底色，回傳 canvas（供白箱驗證直接取像素；一般使用請用 `takeChartScreenshotBlob`）。 */
 export function takeChartScreenshotCanvas(
   chart: IChartApi,
-  { addTopLayer = true, includeCrosshair = false, backgroundColor }: ChartScreenshotOptions = {},
+  { addTopLayer = true, includeCrosshair = false, backgroundColor, headerLabel }: ChartScreenshotOptions = {},
 ): HTMLCanvasElement {
   const canvas = chart.takeScreenshot(addTopLayer, includeCrosshair);
   const background = backgroundColor === undefined ? resolvePageBackgroundColor() : backgroundColor;
   if (background !== null) fillCanvasBackground(canvas, background);
+
+  // 標題列疊在補完底色之後：此時圖表區已不透明，標題列另取底色鋪滿。
+  if (headerLabel) {
+    const scale = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    return composeWithHeaderLabel(canvas, headerLabel, {
+      backgroundColor: background ?? FALLBACK_BACKGROUND_COLOR,
+      textColor: resolvePageHeadingColor(),
+      scale,
+    });
+  }
+
   return canvas;
 }
 

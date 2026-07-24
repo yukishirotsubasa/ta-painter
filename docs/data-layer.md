@@ -88,6 +88,7 @@ type DataSource = 'yahoo' | 'official';
 const DATA_SOURCES: DataSource[] = ['yahoo', 'official'];
 const DEFAULT_DATA_SOURCE: DataSource = 'yahoo';
 const DATA_SOURCE_LABEL: Record<DataSource, string>; // 'Yahoo（快）' / '官方（TWSE／TPEx）'
+const OLDER_BATCH_MONTHS: Record<DataSource, number>; // { yahoo: 12, official: 3 }
 
 function resolveProvider(source: DataSource, market: Market | null): StockDataProvider | null;
 function estimateRequestCount(source: DataSource, range: DateRange): number;
@@ -104,10 +105,68 @@ function fetchBars(
 - `resolveProvider()`：`yahoo` 恆為 `YahooProvider`（上市／上櫃通用、與市場別無關）；`official` 依市場別路由 `TWSE → TwseProvider`、`TPEX → TpexProvider`；**官方源但市場別為 `null`（代號不在股票清單內）時回傳 `null`**。模組頂端 `import` 三個 provider 檔案完成 side-effect 註冊，再用 id 從 `providerRegistry` 取實例。
 - `fetchBars()`：**Yahoo 走單次 `provider.fetchDaily()`**（一次取回整段區間，不經逐月迴圈，因此也不經 localStorage 月快取與月間節流）；**官方源走 `fetchDailyRange()`**（逐月 + 快取 + 300–500ms 節流）。無法解析 provider 時 reject `無法判斷 {stockNo} 的市場別（不在股票清單內），請改用 Yahoo 資料源`。
 - `estimateRequestCount()`：Yahoo 恆為 1、官方源等於區間月數（快取命中不會減少估計值），供 `App.tsx` 設定進度條的 `total`。
+- `OLDER_BATCH_MONTHS`：往左捲動時一次往前追加的月數（見下方「往前動態載入」）。**兩源不同是因為成本結構不同**——Yahoo 單次請求就能取回整段，補 12 個月與補 1 個月成本相同；官方源逐月抓取且月與月之間有 300–500ms 節流，補 12 個月要等約 6 秒，因此縮到 3 個月一批。
+
+## 往前動態載入（`lib/data/history.ts` + `App.tsx` + `ChartContainer`）
+
+資料範圍不再是固定的一段，而是**先載一批、之後隨著使用者往左捲動再往前延伸**。
+
+### 觸發：可視範圍逼近左緣
+
+`ChartContainer` 在建立 chart 時訂閱 `chart.timeScale().subscribeVisibleLogicalRangeChange()`，`range.from < LOAD_OLDER_THRESHOLD`（10 根 K 棒）時呼叫 `onNeedOlderData` prop：
+
+- **左側留白時 `from` 會是負數**，因此同一個門檻同時涵蓋兩種情境：「資料量不足以填滿畫面寬度」與「使用者往左捲到接近底」。
+- **「填滿目前畫面寬度」因此不需要量容器寬度換算需要幾根 K 棒**：補完資料後的 `setVisibleLogicalRange()` 會再觸發一次同一個回呼，於是自動一批批補到 `from` 超過門檻為止。實測 1125px 寬的圖表：初始 6 個月（125 根）→ 自動再補 12 個月（260 根）→ 填滿即停。
+- 訂閱只在掛載時建立一次（跟著圖表實例的生命週期），回呼透過 ref 轉接，因此 `App` 每次 render 產生的新 callback 身分不會造成重新訂閱。
+
+### 前插後的視圖保持
+
+`setData()` 是整批取代，前插 N 根會讓**所有邏輯索引一起位移 N**，不校正的話畫面會整個往左跳。`ChartContainer` 的 data effect：
+
+1. 用 ref 記住上一批資料的第一根時間，若新資料第一根**更早**，就用 `data.findIndex(bar => bar.time === previousFirstTime)` 算出前插筆數。
+2. `setData()` 前先存 `getVisibleLogicalRange()`，之後 `setVisibleLogicalRange({ from: from + N, to: to + N })` 平移回去。使用者看到的 K 棒維持不變（右緣錨定）。
+3. `findIndex` 回 `-1`（換股票時整批換掉、新舊資料無交集）就不校正，交給函式庫預設的初次定位。
+4. **畫線不需要處理**：`TrendLinePrimitive` 存的是 time/price 邏輯座標，不受索引位移影響。
+
+### 純函式（`lib/data/history.ts`）
+
+```ts
+addMonths(iso: string, months: number): string   // 負數往前；日期溢位時夾到目標月最後一天
+previousDay(iso: string): string
+mergeOlderBars(older: readonly OhlcvBar[], existing: readonly OhlcvBar[]): OhlcvBar[]
+```
+
+- `addMonths` **必須夾日**：直接用 JS `Date` 做月份運算會溢位（3/31 往前一個月會變成 3/3，區間比預期短），因此先定位到目標月 1 號、取得該月天數後才 `setDate(Math.min(day, lastDay))`。
+- `mergeOlderBars` 以 `Map` 依 `time` 去重後排序，**重疊處以 `existing` 為準**（同一天資料兩邊相同，取既有的可避免已顯示的 bar 物件被無謂替換）。
+- 13 個單元測試涵蓋跨年、閏年、月底夾日與重疊去重。抽成純函式的理由見 [`technical-debt.md`](../project-planning/technical-debt.md)（沒有元件測試環境，可測邏輯盡量往純函式搬）。
+
+### `App.tsx` 的狀態與守門
+
+| 名稱 | 型別 | 用途 |
+|---|---|---|
+| `initialRange` | state | 首批查詢區間（近 6 個月，或分享連結還原的區間）。只是**起點**，之後不變 |
+| `earliestLoaded` | state | 目前已載入到的最早日期；分享連結要用，故放 state |
+| `earliestLoadedRef` | ref | 同上，供守門判斷 |
+| `hasMoreHistoryRef` | ref | 補到空資料或失敗後轉 `false`，不再請求 |
+| `loadingOlderRef` | ref | 防重入，同時間只允許一筆往前查詢 |
+| `loadingOlder` | state | 只給 UI（header 顯示「載入更舊資料…」） |
+| `dataIdentityRef` | ref | `` `${stockNo}|${dataSource}` ``，查詢回來時比對，期間換過標的就丟棄結果 |
+
+**三個控制旗標一律用 ref 而非 state**：`.finally()` 解鎖的時機早於 React 重新 render，中間若又觸發左緣事件，讀 state 的舊 closure 會拿到尚未更新的區間而重複請求同一段——更糟的是重複那段不含更舊的資料，可視範圍不會動，於是再次觸發、形成迴圈。改用 ref 並**在送出當下就推進 `earliestLoadedRef`**，重複觸發必然是 no-op 或推進到更舊的一批。
+
+單次往前載入的流程：
+
+1. 守門：`loadingOlderRef` / `hasMoreHistoryRef` / `bars.length === 0`（首批還沒到位）／官方源市場別未知，任一命中即 return。
+2. 區間為 `{ start: addMonths(earliestLoadedRef.current, -OLDER_BATCH_MONTHS[dataSource]), end: previousDay(earliestLoadedRef.current) }`——`end` 退一天，與既有資料不重疊。
+3. `fetchBars()`（**不傳 `onProgress`**，增量載入只用一行輕量提示，不佔用首批查詢的進度條）。
+4. 回傳為空 → `hasMoreHistoryRef = false`（視為已達上市初期，否則會一路往前空打到 1970 年）；有資料 → `mergeOlderBars()` 併入並推進 `earliestLoaded`。
+5. 失敗 → 同樣停手。**往前補失敗不顯示錯誤、不影響已顯示的資料**（只有首批查詢失敗才需要讓使用者知道）。
+
+換股票／換資料源時：重置 effect 會 `setBars([])` 並把三個旗標歸零。**首批一律從空資料開始**是必要的——新舊標的的 bars 若混在一起，前插判定會拿舊標的的第一根時間去比對而誤判位移。
 
 ## `App.tsx` 的查詢流程
 
-- 預設資料源為 **Yahoo**（`DEFAULT_DATA_SOURCE`），可由側邊欄資料源區塊切換（見 [sidebar.md](sidebar.md)）。查詢區間固定為近 `QUERY_MONTHS = 6` 個月。
+- 預設資料源為 **Yahoo**（`DEFAULT_DATA_SOURCE`），可由側邊欄資料源區塊切換（見 [sidebar.md](sidebar.md)）。首批查詢區間為近 `QUERY_MONTHS = 6` 個月，之後隨捲動往前延伸（見上一節）。
 - **路由用的市場別只在官方源時採用**（`routingMarket = dataSource === 'official' ? symbol.market : null`）：Yahoo 模式下股票清單補上市場別不會觸發重新查詢。
 - **官方源但市場別未知時不發查詢、也不清空既有資料**：`bars` 維持前一次結果，header 顯示 `notice`（`代號不在股票清單內，官方源無法判斷市場別；圖表仍顯示前一次查詢結果，請改用 Yahoo 或改查其他代號`），側邊欄另有路由層級的警告。這與查詢失敗的 `error`（會清空 `bars`）是不同狀態。
 - **代號送出 debounce（300ms）**：Enter 確認、下拉建議選取、查詢按鈕三條路徑都會走同一個查詢 effect，`fetchBars()` 包在 `setTimeout(…, QUERY_DEBOUNCE_MS)` 內，cleanup 同時 `clearTimeout()` 與 `AbortController.abort()`，因此**快速連續切換代號時只有最後一次真的發出請求**。進度條在 timer 之外先設好，載入回饋不受延遲影響。
@@ -138,8 +197,11 @@ function fetchBars(
 
 ## 已知限制 / 尚未實作
 
-- **Yahoo 路徑不走 localStorage 月快取**：`fetchBars()` 對 Yahoo 直接單次請求，重查同一區間仍會實打上游一次。這是明確決策（Yahoo 單次查詢成本低），請求頻率由代號送出的 300ms debounce 控制，不另外加快取回填。
-- **查詢區間固定 6 個月**：`App.tsx` 的 `QUERY_MONTHS` 寫死，沒有區間選擇 UI。
+- **Yahoo 路徑不走 localStorage 月快取**：`fetchBars()` 對 Yahoo 直接單次請求，重查同一區間仍會實打上游一次。這是明確決策（Yahoo 單次查詢成本低），請求頻率由代號送出的 300ms debounce 控制，不另外加快取回填。往前動態載入同樣走這條，因此 Yahoo 每往前補一批就是一次實打。
+- **沒有區間選擇 UI**：首批固定近 `QUERY_MONTHS = 6` 個月（`App.tsx` 寫死），之後只能靠往左捲動延伸，無法直接跳到指定年份。
+- **「整批無資料」即視為已到最早**：往前補到空陣列就停手。若某檔股票中間真有一整批（Yahoo 12 個月／官方 3 個月）完全無交易資料，會被誤判成已達上市初期而提早停止；實務上這種長度的空窗極罕見，換取的是「不會一路往前空打」的確定性。要繼續往前只能重新整理。
+- **往前載入的失敗不告知使用者**：靜靜停手，`hasMoreHistoryRef` 轉 `false`，畫面只是不再變長。重新整理才會重試。
+- **每次前插都會整批 `setData()` 並重算所有指標**：`reconcileIndicators` 以 `data` 參考變動為依據，前插後全部指標重算。數千根 K 棒的量級實測可接受，暫不做增量更新。
 - Yahoo 的成交量不含盤後定價／鉅額交易，數值略低於 TWSE／TPEx 官方（OHLC 一致）；三來源的量能單位雖已統一為股數，但同一檔股票跨來源查詢時量能會有小幅落差，見 [technical-debt.md](../project-planning/technical-debt.md)。
 - TPEx／Yahoo 的反爬蟲／IP 封鎖規則不受我方控制，proxy 可能再次失效；沒有週期性健康檢查（原 cron 方向已取消），只有 data8 的使用端即時提示，見 [technical-debt.md](../project-planning/technical-debt.md)。
 - **錯誤分類靠訊息字串比對**：provider 沒有結構化的錯誤型別，`classifyDataError()` 依賴訊息中的 `HTTP {status}` 與「查詢失敗」字樣，改動 provider 錯誤訊息時必須同步檢查 `errors.test.ts`。

@@ -33,6 +33,8 @@ interface ShareMenuProps {
   fileName: string;
   /** 系統分享面板顯示的標題。 */
   shareTitle: string;
+  /** 按下「分享URL」時即時組出目前狀態的分享連結；透傳給 `ShareLinkButton`。 */
+  buildShareUrl: () => string;
   /**
    * 行動版精簡工具列（responsive2）：只留「分享圖片」與連結分享。
    * 「複製圖片」在行動裝置上用處不大（要貼到別的 App 走系統分享面板更直接），且橫向空間有限。
@@ -66,6 +68,7 @@ export function ShareMenu({
   takeScreenshotSync,
   fileName,
   shareTitle,
+  buildShareUrl,
   compact = false,
 }: ShareMenuProps) {
   const [status, setStatus] = useState<ImageStatus>('idle');
@@ -123,7 +126,7 @@ export function ShareMenu({
 
   return (
     <div className="share-menu">
-      <ShareLinkButton compact={compact} />
+      <ShareLinkButton buildShareUrl={buildShareUrl} compact={compact} />
       {!compact && (
         <button type="button" className="share-menu-button" onClick={copyImage}>
           複製圖片
