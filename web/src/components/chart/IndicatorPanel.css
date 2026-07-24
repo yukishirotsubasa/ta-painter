@@ -6,13 +6,27 @@
   padding: 0 4px;
 }
 
+/* 指標種類多，改為「下拉選單 + 新增鈕」而非平鋪按鈕（indicator13）。 */
 .indicator-panel-add {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
+.indicator-panel-add select {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
 .indicator-panel-add button {
+  flex: none;
   font: inherit;
   font-size: 13px;
   color: var(--accent);

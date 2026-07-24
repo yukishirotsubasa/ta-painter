@@ -8,6 +8,7 @@ import {
 } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
 import { UP_COLOR, DOWN_COLOR, DEFAULT_LINE_COLOR } from '../colors';
+import { ema } from './movingAverage';
 import { registerIndicator } from './registry';
 import {
   numberParam,
@@ -33,24 +34,6 @@ export interface MacdPoint {
   histogram: number;
 }
 
-/** 對 values 計算週期為 period 的 EMA，種子為前 period 筆的 SMA；回傳陣列從 values[period-1] 對齊開始，長度為 values.length-period+1（資料不足時回傳空陣列）。 */
-function computeEmaSeries(values: number[], period: number): number[] {
-  if (values.length < period) return [];
-
-  const multiplier = 2 / (period + 1);
-  const result: number[] = [];
-
-  let previous = values.slice(0, period).reduce((acc, value) => acc + value, 0) / period;
-  result.push(previous);
-
-  for (let i = period; i < values.length; i += 1) {
-    previous = values[i] * multiplier + previous * (1 - multiplier);
-    result.push(previous);
-  }
-
-  return result;
-}
-
 /**
  * 計算 MACD：DIF = EMA(fast) - EMA(slow)，DEA = EMA(DIF, signal)，histogram = DIF - DEA。
  * 資料不足以算出完整 DIF/DEA/histogram 的時間點不輸出（與 MA/布林通道一致）。
@@ -61,8 +44,8 @@ function computeMacd(bars: OhlcvBar[], params: IndicatorParamValues): MacdPoint[
   const signalPeriod = Math.max(1, Math.round(numberParam(params, 'signalPeriod', DEFAULT_SIGNAL_PERIOD)));
 
   const closes = bars.map((bar) => bar.close);
-  const fastEma = computeEmaSeries(closes, fastPeriod);
-  const slowEma = computeEmaSeries(closes, slowPeriod);
+  const fastEma = ema(closes, fastPeriod);
+  const slowEma = ema(closes, slowPeriod);
   if (slowEma.length === 0) return [];
 
   // fastEma[0] 對齊 bars[fastPeriod-1]，slowEma[0] 對齊 bars[slowPeriod-1]；offset 換算成 fastEma 的索引。
@@ -74,7 +57,7 @@ function computeMacd(bars: OhlcvBar[], params: IndicatorParamValues): MacdPoint[
     difValues.push(fastEma[fastIndex] - slowEma[i]);
   }
 
-  const deaValues = computeEmaSeries(difValues, signalPeriod);
+  const deaValues = ema(difValues, signalPeriod);
   const difStartBarIndex = slowPeriod - 1;
   const points: MacdPoint[] = [];
 

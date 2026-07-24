@@ -1,6 +1,7 @@
 import { LineSeries, type IChartApi, type ISeriesApi, type LineData } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
 import { DEFAULT_LINE_COLOR } from '../colors';
+import { sma } from './movingAverage';
 import { registerIndicator } from './registry';
 import {
   numberParam,
@@ -35,23 +36,21 @@ export interface BollingerPoint {
 function computeBollinger(bars: OhlcvBar[], params: IndicatorParamValues): BollingerPoint[] {
   const period = Math.max(1, Math.round(numberParam(params, 'period', DEFAULT_PERIOD)));
   const multiplier = numberParam(params, 'stdDevMultiplier', DEFAULT_STD_DEV_MULTIPLIER);
-  const points: BollingerPoint[] = [];
+  const means = sma(bars.map((bar) => bar.close), period);
 
-  for (let i = period - 1; i < bars.length; i += 1) {
-    const window = bars.slice(i - period + 1, i + 1);
-    const mean = window.reduce((acc, bar) => acc + bar.close, 0) / period;
+  return means.map((mean, i) => {
+    const barIndex = period - 1 + i;
+    const window = bars.slice(barIndex - period + 1, barIndex + 1);
     const variance = window.reduce((acc, bar) => acc + (bar.close - mean) ** 2, 0) / period;
     const stdDev = Math.sqrt(variance);
 
-    points.push({
-      time: bars[i].time,
+    return {
+      time: bars[barIndex].time,
       upper: mean + multiplier * stdDev,
       middle: mean,
       lower: mean - multiplier * stdDev,
-    });
-  }
-
-  return points;
+    };
+  });
 }
 
 function toLineData(points: BollingerPoint[], key: 'upper' | 'middle' | 'lower'): LineData[] {

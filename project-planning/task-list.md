@@ -44,10 +44,22 @@
 
 ### indicator Module
 
-技術指標可擴充架構：參數型別化、來源/顏色可調、共用常數與 reconcile 效率。
+技術指標可擴充架構：參數型別化、來源/顏色可調、共用常數與 reconcile 效率；常見指標擴充與自訂分析方式。
 
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
+| [indicator12](task-pool/indicator12.md) | 完成 | High | - | `movingAverage.ts` / `priceSource.ts` / `referenceLines.ts` / `testFakeChart.ts` 共用 helper，MA/布林/MACD 改為引用 |
+| [indicator13](task-pool/indicator13.md) | 完成 | Medium | - | `IndicatorPanel` 新增入口改為下拉選單 + 新增鈕 |
+| [indicator14](task-pool/indicator14.md) | 完成 | High | indicator12 | `ema.ts` EMA 指數移動平均（overlay） |
+| [indicator15](task-pool/indicator15.md) | 完成 | High | indicator12 | `kd.ts` KD 隨機指標（separate-pane，20/80 參考線） |
+| [indicator16](task-pool/indicator16.md) | 完成 | High | indicator12 | `rsi.ts` RSI（separate-pane，30/70 參考線） |
+| [indicator17](task-pool/indicator17.md) | 完成 | Medium | indicator12 | `atr.ts` ATR + 匯出 `trueRange()` |
+| [indicator18](task-pool/indicator18.md) | 完成 | Medium | indicator17 | `dmi.ts` DMI／ADX（separate-pane，ADX 25 參考線） |
+| [indicator19](task-pool/indicator19.md) | 完成 | Medium | indicator12 | `obv.ts` OBV 能量潮（separate-pane，volume 格式） |
+| [indicator20](task-pool/indicator20.md) | 完成 | Medium | indicator12 | `cci.ts` CCI + `williams.ts` 威廉指標 %R |
+| [indicator21](task-pool/indicator21.md) | 完成 | Low | indicator12 | `bias.ts` 乖離率 + `roc.ts` 動能指標 |
+| [indicator22](task-pool/indicator22.md) | 完成 | Low | indicator12 | `sar.ts` 拋物線轉向（overlay 點列，多空分色） |
+| [indicator23](task-pool/indicator23.md) | 完成 | High | indicator12 | `headBottom.ts` 頭底分析（均線穿越取區間極值連線 + 頭/底標記） |
 
 ### drawing Module
 

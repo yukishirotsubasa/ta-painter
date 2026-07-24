@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { getIndicator, listIndicators } from '../../lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorParamValues } from '../../lib/chart/indicators/types';
 import { IndicatorParamFields } from './IndicatorParamFields';
@@ -12,15 +13,29 @@ interface IndicatorPanelProps {
 
 export function IndicatorPanel({ instances, onAdd, onRemove, onParamsChange }: IndicatorPanelProps) {
   const definitions = listIndicators();
+  // 指標種類變多後改用下拉選單（indicator13）：平鋪按鈕在側邊欄寬度下會塞成一整面牆。
+  const [selectedId, setSelectedId] = useState(definitions[0]?.id ?? '');
 
   return (
     <div className="indicator-panel">
       <div className="indicator-panel-add">
-        {definitions.map((definition) => (
-          <button key={definition.id} type="button" onClick={() => onAdd(definition.id)}>
-            + {definition.label}
-          </button>
-        ))}
+        <label className="sr-only" htmlFor="indicator-panel-add-select">
+          選擇要新增的指標
+        </label>
+        <select
+          id="indicator-panel-add-select"
+          value={selectedId}
+          onChange={(event) => setSelectedId(event.target.value)}
+        >
+          {definitions.map((definition) => (
+            <option key={definition.id} value={definition.id}>
+              {definition.label}
+            </option>
+          ))}
+        </select>
+        <button type="button" disabled={selectedId === ''} onClick={() => onAdd(selectedId)}>
+          + 新增
+        </button>
       </div>
 
       <ul className="indicator-panel-list">

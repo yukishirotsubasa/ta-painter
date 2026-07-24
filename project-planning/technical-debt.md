@@ -8,7 +8,7 @@
 >
 > 已解決的條目直接移除（實作紀錄留在 `docs/` 與 git history）；決策為**不處理**的條目壓縮到文末「已關閉（不處理）」一節，只留結論與必要的提醒。
 >
-> 現況（2026-07-24 整理後）：追蹤中 7 則（皆為 Skip）、已關閉不處理 8 則。
+> 現況（2026-07-24 更新）：追蹤中 8 則（皆為 Skip）、已關閉不處理 8 則。
 
 ## 圖表色票與 CSS 變數需人工同步（`CHART_TEXT_COLOR`／`CHART_GRID_COLOR` vs `--text`／`--border`）
 
@@ -37,8 +37,17 @@
 - **現況（2026-07-23 更新，share4/5）**：`ShareMenu` 的分支邏輯（剪貼簿成功／不支援／被拒、Web Share 成功／`canShare` 回 false／使用者取消／被拒、截圖回 `null` 的失敗路徑）同樣沒有元件測試，純函式部分（`imageShare` 的能力偵測與 `screenshot` 的編碼路徑）有 20 例單元測試。這次是在 dev server 上用 `javascript_tool` 側錄 `clipboard.write`／`canShare`／`share`／`HTMLAnchorElement.prototype.click`／`URL.createObjectURL`，再對每條分支各點一次按鈕來驗證——涵蓋度夠，但每次回歸都得重搭一次側錄，成本高且無法自動重跑。
 - **現況（2026-07-24 更新，data8/share6）**：兩個任務的可測邏輯都抽成了純函式並有單元測試（`classifyDataError` 11 例），但**「錯誤分類 → 是否顯示提示」與「pending 綁定代號」的 React 接線本身仍無元件測試**：`error` state 帶 `kind` 後的條件渲染、`pendingLinesRef` 的比對與清空、hash 同步依賴 `bars` 才能即時解封——這三件都靠沙盒手測。這次的驗證手法比先前更省事，值得沿用：**用頁內 `await import('/ta-painter/src/lib/state/shareUrl.ts')` 直接叫應用自己的模組**（vite dev server 會供應原始碼模組）現場產分享連結，並以 `readShareHash(location.hash)` 反解 App 回寫的 hash 當作 `lines` state 的斷言依據，不必碰 canvas；互動則用 `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set` 繞過 React 的 value tracker 後 `form.requestSubmit()`。另記一個沙盒坑：`preview_start` 回報的 port 與 vite 實際監聽的 port 可能不同（vite 自行讓 port 時），要看 `preview_logs` 的 Local 網址，且 tab 偶爾會被彈回失效的網址，長流程最好壓成單一 `javascript_tool` 呼叫。
 - **現況（2026-07-24 更新，六項新需求）**：本輪新增的 React 接線同樣沒有元件測試，可測邏輯已照慣例抽成純函式並補上單元測試（`persistence.ts` 8 例、`history.ts` 13 例、`screenshot.ts` 標題列 10 例，全案 314 passed）。**未被涵蓋的接線**：session 模式判斷（hash → preview／normal）、持久化 effect 的「預覽模式不寫」、退出預覽的 state 重設、`ChartContainer` 的可視範圍訂閱與前插視圖校正、`loadOlderBars` 的守門與重入處理。這次的沙盒驗證手法比先前更進一步，值得沿用：**(1) stub `window.fetch` 攔截 proxy URL 回合成 K 線**，讓整條查詢／自動填滿迴圈在無外網環境下可重現，並藉由記錄每次請求的 `period1`/`period2` 直接斷言「每批嚴格更舊、無重複區間、空批次後停手」；**(2) 預先塞好 `ohlcv:{provider}:{stockNo}:{YYYY-MM}` 月快取**，讓官方源完全不經網路取得資料（區間需避開當月，當月一律視為過期）；**(3) 攔截 `navigator.clipboard.writeText`／`write`** 取得分享連結與截圖 PNG，再用 `createImageBitmap` + `getImageData` 對標題列做像素級斷言。另記一個此前未記錄的坑：**前插資料的迴圈防護不能靠 state**——`.finally()` 解鎖早於 React re-render，舊 closure 會重複請求同一段而形成迴圈，控制旗標必須用 ref 並在送出當下推進。
+- **現況（2026-07-24 更新，indicator12–23）**：新增 11 個常見指標 + 頭底分析，可測邏輯全在純函式與 `mount()` 契約（`compute()` 數值 + fake-chart，全案 440 passed）。**未被涵蓋的仍是 canvas 上的實際渲染**：頭底分析折線與頭/底標記位置、SAR 點列與多空分色、各 separate-pane 指標的線形與 price-line 參考線都只驗證了「餵給 series 的資料正確」，沒驗「畫出來長怎樣」。本輪特別記一個沙盒新坑：**即使 stub `window.fetch` 回合成 K 線、預塞月快取，這個 Browser pane 仍走不完 app 自身的資料查詢路徑**（圖表始終無 K 線、pane 為 hidden 故 canvas 不 compositing、`screenshot` timeout），因此指標的視覺回歸連「合成資料」這條路都走不通，只能靠本機 `npm run dev` 肉眼複測。指標新增下拉（indicator13）是本輪唯一的 React 接線，只有 `useState` 記選取值，無其他未測邏輯。
 - **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`、`ShareMenu` 的 fallback 分支（stub 掉 `imageShare` 的能力偵測即可，不需要真的 canvas）、`upstream-blocked` 才渲染 `.app-error-hint`、pending 代號不符時不呼叫 `ChartHandle.addLine`。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
 - **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。已明確知道缺口在哪、也已把可測邏輯盡量抽成純函式，目前選擇維持人工手測。本則**保留在清單上持續累積**——每次新增互動邏輯就更新「現況」段落，讓缺口規模保持可見，日後決定要補時有現成的優先案例清單。
+- **對應任務**：暫無（Skip）。
+
+## 指標的 UI／註冊順序被 `registerAll.ts` 的 import 行序決定，且受跨指標 import 干擾
+
+- **狀況**：`listIndicators()` 的順序（即新增下拉選單的順序）等於 `registerAll.ts` 內 side-effect import 的**執行順序**，不是宣告順序。當一個指標模組 import 另一個指標模組時（目前只有 `dmi.ts` 用 `atr.ts` 的 `trueRange()`），被 import 的模組會先執行其檔尾的 `registerIndicator()`，於是 ATR 會「插隊」到 DMI 前面。已在 `registerAll.ts` 把 ATR 手動排到 DMI 之前讓行序與實際順序一致，並以 `registerAll.test.ts` 用精確 id 陣列鎖住整體順序。
+- **影響**：目前順序正確、測試會攔到任何變動。但這是**隱性耦合**：日後若新增一組互相 import 的指標（例如某新指標重用另一指標的 `compute`），UI 順序會與 `registerAll.ts` 的行序不符，且**若沒有更新 `registerAll.test.ts` 的期望陣列就不會有任何提示**——測試只是鎖住「當下」的順序，不會告訴你「為什麼」跑掉。純視覺影響（選單順序），不影響功能或分享連結（後者靠 `urlCode` 精確比對，與順序無關）。
+- **建議**：若順序需要穩定且與 import 無關，可改為在 `registerAll.ts` 明確 `import { XxxIndicator } from './xxx'` 後 `registerIndicator(XxxIndicator)`，把「註冊順序」從「模組副作用執行順序」手中拿回來；或在 `IndicatorDefinition` 加一個 `order` 欄位由 `listIndicators()` 排序。目前 15 個指標只有一組跨檔 import，成本效益不高。
+- **決策（2026-07-24）**：**Skip**，維持追蹤不排任務。**新增互相 import 的指標時**：確認 `registerAll.ts` 的行序仍反映期望的 UI 順序，並同步更新 `registerAll.test.ts` 的 id 陣列。
 - **對應任務**：暫無（Skip）。
 
 ## 股票清單型別在 `scripts/` 與 `src/` 各自宣告一份

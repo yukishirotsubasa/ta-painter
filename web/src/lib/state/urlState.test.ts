@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
-// side-effect：把 MA／布林／MACD 註冊進 registry，短代碼才查得到。
-import '../chart/indicators/ma';
-import '../chart/indicators/bollinger';
-import '../chart/indicators/macd';
-import { getIndicator } from '../chart/indicators/registry';
+// side-effect：把所有內建指標註冊進 registry，短代碼才查得到。
+import '../chart/indicators/registerAll';
+import { getIndicator, listIndicators } from '../chart/indicators/registry';
 import type { ShareState } from './schema';
 import { decodeShareState, encodeShareState } from './urlState';
 
@@ -188,5 +186,43 @@ describe('whole-payload failures', () => {
     for (const payload of ['', '2330', '2330|y', '2330|x|20240101~20240630||', '2330|y|2024~20240630||', '|y|20240101~20240630||']) {
       expect(decodeShareState(encodePayload(payload))).toBeNull();
     }
+  });
+});
+
+describe('newly added indicators in share links (indicator14–23)', () => {
+  it('round-trips every registered indicator with its default params', () => {
+    const state: ShareState = {
+      ...BASE_STATE,
+      indicators: listIndicators().map((definition) => ({
+        definitionId: definition.id,
+        params: paramsOf(definition.id),
+      })),
+    };
+
+    expect(decodeShareState(encodeShareState(state))).toEqual(state);
+  });
+
+  it('round-trips non-default params of the head/bottom analysis and the new oscillators', () => {
+    const state: ShareState = {
+      ...BASE_STATE,
+      indicators: [
+        { definitionId: 'headBottom', params: paramsOf('headBottom', { period: 10, color: '#ff0000' }) },
+        { definitionId: 'kd', params: paramsOf('kd', { rsvPeriod: 14, kPeriod: 5 }) },
+        { definitionId: 'rsi', params: paramsOf('rsi', { period: 7 }) },
+        { definitionId: 'ema', params: paramsOf('ema', { period: 26, source: 'volume' }) },
+        { definitionId: 'sar', params: paramsOf('sar', { step: 0.05, maxStep: 0.3 }) },
+      ],
+    };
+
+    expect(decodeShareState(encodeShareState(state))).toEqual(state);
+  });
+
+  it('encodes the head/bottom analysis under the stable "hb" url code', () => {
+    const encoded = encodeShareState({
+      ...BASE_STATE,
+      indicators: [{ definitionId: 'headBottom', params: paramsOf('headBottom', { period: 10 }) }],
+    });
+
+    expect(decodePayload(encoded)).toBe('2330|y|20240101~20240630|hb:10|');
   });
 });

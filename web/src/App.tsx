@@ -14,9 +14,7 @@ import { useResponsive } from './hooks/useResponsive';
 import { DEFAULT_DRAWING_LINE_COLOR } from './lib/chart/colors';
 import type { DrawnLine } from './lib/chart/drawing/drawingController';
 import { keepSelection, selectionAfterCollapse, toggleSelection } from './lib/chart/drawing/lineSelection';
-import './lib/chart/indicators/ma';
-import './lib/chart/indicators/bollinger';
-import './lib/chart/indicators/macd';
+import './lib/chart/indicators/registerAll';
 import { getIndicator } from './lib/chart/indicators/registry';
 import type { IndicatorInstance, IndicatorParamValues } from './lib/chart/indicators/types';
 import {

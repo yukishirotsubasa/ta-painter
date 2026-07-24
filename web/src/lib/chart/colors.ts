@@ -23,3 +23,9 @@ export const CHART_GRID_COLOR = '#2e303a';
 
 /** 手繪趨勢線的預設顏色（drawing7），畫線工具列選色器的初始值與新線 fallback 皆用它。 */
 export const DEFAULT_DRAWING_LINE_COLOR = '#f5a623';
+
+/**
+ * 震盪指標水平參考線的顏色（indicator12）：RSI 30/70、KD 20/80、CCI ±100、%R −20/−80、BIAS/ROC 0 軸。
+ * 刻意比格線亮一點但比指標線暗，讓它讀得到又不搶戲；不開放參數調整。
+ */
+export const REFERENCE_LINE_COLOR = '#5a5d6b';

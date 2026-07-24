@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Time } from 'lightweight-charts';
 import type { DrawnLine } from '../chart/drawing/drawingController';
-// side-effect：註冊 MA／布林／MACD，短代碼與 paramsSchema 才查得到。
-import '../chart/indicators/ma';
-import '../chart/indicators/bollinger';
-import '../chart/indicators/macd';
+// side-effect：註冊所有內建指標，短代碼與 paramsSchema 才查得到。
+import '../chart/indicators/registerAll';
 import { getIndicator } from '../chart/indicators/registry';
 import type { ShareState } from './schema';
 import {

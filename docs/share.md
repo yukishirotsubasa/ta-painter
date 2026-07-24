@@ -52,7 +52,7 @@ symbol | prov | start~end | indicator,indicator,… | line,line,…
 - `prov`：`y`（yahoo）／`o`（official）。
 - 日期：`YYYYMMDD`（去掉 `-`）。
 - **指標**：`code` 或 `code:arg~arg~…`
-  - `code` 取 `IndicatorDefinition.urlCode`（`ma`／`bb`／`md`，見 [indicators.md](indicators.md)）。
+  - `code` 取 `IndicatorDefinition.urlCode`（全 15 個：`ma`／`em`／`bb`／`sr`／`hb`／`md`／`kd`／`rs`／`at`／`dm`／`cc`／`wr`／`bi`／`rc`／`ob`，見 [indicators.md](indicators.md)）。這些代碼**一旦發布就不得更動**，改了會讓既有分享連結解不出該指標。
   - args **依 `paramsSchema` 的順序**排列，等於該參數 `default` 的留空，尾端連續空值直接截掉。
   - number → `String(value)`；enum → 足以區分所有選項的**最短前綴**（MA 的 `source` 因此壓成 `c`/`o`/`h`/`l`/`v`）；color → 去 `#`，可縮寫時壓成 3 碼。
   - 例：MA 週期 60、來源 close（預設）、線色紅 → `ma:60~~f00`；MA 全預設 → `ma`；布林全預設 → `bb`。
