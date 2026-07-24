@@ -135,6 +135,13 @@ function mount(
       chart.removeSeries(adxSeries);
       paneIndexAllocator.release(paneIndex);
     },
+    tooltipRows() {
+      return [
+        { label: '+DI', color: plusSeries.options().color, series: plusSeries },
+        { label: '−DI', color: minusSeries.options().color, series: minusSeries },
+        { label: 'ADX', color: adxSeries.options().color, series: adxSeries },
+      ];
+    },
   };
 }
 

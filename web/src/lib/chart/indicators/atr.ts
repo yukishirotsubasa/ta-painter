@@ -67,13 +67,20 @@ function mount(
 
   setAll(bars, params);
 
+  let latestParams = params;
+
   return {
     update(nextBars, nextParams) {
       setAll(nextBars, nextParams);
+      latestParams = nextParams;
     },
     dispose() {
       chart.removeSeries(series);
       paneIndexAllocator.release(paneIndex);
+    },
+    tooltipRows() {
+      const period = Math.max(1, Math.round(numberParam(latestParams, 'period', DEFAULT_PERIOD)));
+      return [{ label: `ATR${period}`, color: series.options().color, series }];
     },
   };
 }

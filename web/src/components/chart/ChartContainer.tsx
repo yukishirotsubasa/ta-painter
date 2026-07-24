@@ -8,6 +8,7 @@ import {
   type IChartApi,
   type ISeriesApi,
   type LogicalRange,
+  type MouseEventParams,
   type Time,
 } from 'lightweight-charts';
 import { createPaneIndexAllocator } from '../../lib/chart/paneIndexAllocator';
@@ -22,7 +23,12 @@ import {
 import { VerticalLinePrimitive } from '../../lib/chart/verticalLinePrimitive';
 import { PRICE_PANE_INDEX, VOLUME_PANE_INDEX, RESERVED_PANE_COUNT } from '../../lib/chart/panes';
 import { reconcileIndicators, type MountedIndicator } from '../../lib/chart/indicators/reconcile';
-import type { IndicatorInstance, PaneIndexAllocator } from '../../lib/chart/indicators/types';
+import type {
+  IndicatorInstance,
+  IndicatorTooltipRow,
+  PaneIndexAllocator,
+} from '../../lib/chart/indicators/types';
+import { buildTooltipModel, type TooltipModel } from '../../lib/chart/tooltip';
 import {
   takeChartScreenshotBlob,
   takeChartScreenshotBlobSync,
@@ -112,6 +118,59 @@ function toAdjustmentTimes(dates: string[]): Time[] {
   return dates.map((date) => date as Time);
 }
 
+/** 游標與 tooltip 之間留白，且優先擺在游標右下、超出容器則翻到另一側。 */
+const TOOLTIP_MARGIN = 12;
+
+/** 以 DOM 節點（非 innerHTML）重建 tooltip 內容，label/value 一律 textContent，天然免跳脫。 */
+function renderTooltip(el: HTMLDivElement, model: TooltipModel): void {
+  el.replaceChildren();
+
+  const date = document.createElement('div');
+  date.className = 'chart-tooltip-date';
+  date.textContent = model.date;
+  el.appendChild(date);
+
+  for (const row of model.rows) {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'chart-tooltip-row';
+
+    const dot = document.createElement('span');
+    dot.className = 'chart-tooltip-dot';
+    // 無色（K 線 OHLC、成交量）保留位置但透明，讓各列左緣對齊。
+    dot.style.background = row.color ?? 'transparent';
+    rowEl.appendChild(dot);
+
+    const label = document.createElement('span');
+    label.className = 'chart-tooltip-label';
+    label.textContent = row.label;
+    rowEl.appendChild(label);
+
+    const value = document.createElement('span');
+    value.className = 'chart-tooltip-value';
+    value.textContent = row.value;
+    rowEl.appendChild(value);
+
+    el.appendChild(rowEl);
+  }
+}
+
+/** 把 tooltip 夾在容器內定位：預設游標右下，貼近右／下緣時翻向左／上。 */
+function positionTooltip(el: HTMLDivElement, container: HTMLDivElement, point: { x: number; y: number }): void {
+  const { clientWidth: cw, clientHeight: ch } = container;
+  const tw = el.offsetWidth;
+  const th = el.offsetHeight;
+
+  let left = point.x + TOOLTIP_MARGIN;
+  if (left + tw > cw) left = point.x - TOOLTIP_MARGIN - tw;
+  left = Math.max(0, Math.min(left, cw - tw));
+
+  let top = point.y + TOOLTIP_MARGIN;
+  if (top + th > ch) top = Math.max(0, ch - th);
+
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+}
+
 export function ChartContainer({
   ref,
   data,
@@ -138,6 +197,9 @@ export function ChartContainer({
    */
   const onNeedOlderDataRef = useRef(onNeedOlderData);
   onNeedOlderDataRef.current = onNeedOlderData;
+  /** 同上：tooltip 的 crosshair 訂閱只建立一次，透過 ref 讓它每次都讀到最新的指標清單（含順序）。 */
+  const indicatorsRef = useRef(indicators);
+  indicatorsRef.current = indicators;
   /** 上一批資料的第一根時間，用來判定這次是否為「往前補資料」（前插後的視圖保持）。 */
   const previousFirstTimeRef = useRef<string | null>(null);
 
@@ -201,7 +263,41 @@ export function ChartContainer({
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
 
+    // tooltip（滑鼠指到某日的資訊框）：命令式 DOM overlay，pointer-events:none 不擋畫線與 crosshair。
+    const tooltipEl = document.createElement('div');
+    tooltipEl.className = 'chart-tooltip';
+    container.appendChild(tooltipEl);
+
+    const onCrosshairMove = (param: MouseEventParams) => {
+      const candlestickSeries = candlestickSeriesRef.current;
+      const volumeSeries = volumeSeriesRef.current;
+      if (!candlestickSeries || !volumeSeries) {
+        tooltipEl.style.display = 'none';
+        return;
+      }
+
+      // 依圖例（instances）順序攤平每個指標的 tooltip 列，未實作 tooltipRows 的指標自然略過。
+      const indicatorRows: IndicatorTooltipRow[] = [];
+      for (const instance of indicatorsRef.current) {
+        const rows = mountedIndicators.get(instance.id)?.handle.tooltipRows?.();
+        if (rows) indicatorRows.push(...rows);
+      }
+
+      const model = buildTooltipModel(param, { candlestickSeries, volumeSeries, indicatorRows });
+      if (!model || !param.point) {
+        tooltipEl.style.display = 'none';
+        return;
+      }
+
+      renderTooltip(tooltipEl, model);
+      tooltipEl.style.display = 'block';
+      positionTooltip(tooltipEl, container, param.point);
+    };
+    chart.subscribeCrosshairMove(onCrosshairMove);
+
     return () => {
+      chart.unsubscribeCrosshairMove(onCrosshairMove);
+      tooltipEl.remove();
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
       resizeObserver.disconnect();
       for (const entry of mountedIndicators.values()) {

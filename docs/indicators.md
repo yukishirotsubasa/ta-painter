@@ -50,9 +50,16 @@ interface PaneIndexAllocator {
   release(paneIndex: number): void;
 }
 
+interface IndicatorTooltipRow {
+  label: string;                 // 顯示名稱，含識別參數（'MA20'、'布林上軌'、'DIF'）
+  color: string;                 // 色點顏色，取自該 series 目前線色
+  series: ISeriesApi<SeriesType>;// tooltip 端以 param.seriesData.get(series) 取當日值
+}
+
 interface IndicatorMountHandle {
   update(bars: OhlcvBar[], params: IndicatorParamValues): void;
   dispose(): void;
+  tooltipRows?(): IndicatorTooltipRow[]; // chart6：選用，交出各線給滑鼠 tooltip；未實作者不出現
 }
 
 interface IndicatorDefinition<TValue = unknown> {
@@ -69,6 +76,7 @@ interface IndicatorDefinition<TValue = unknown> {
 - `compute()` 必須是純函式：相同 `bars`/`params` 輸入永遠回傳相同輸出，不得讀寫外部狀態、不得修改輸入的 `bars` 陣列。實際數值計算與正確性驗證都靠這個函式的單元測試（不需要真的建立 chart）。
 - `urlCode`（share1）：分享連結裡代表這個指標的短代碼（目前 `ma` / `bb`（bollinger） / `md`（macd））。刻意與 `id` 分開——`id` 是程式內部識別、可隨重構更名；`urlCode` **一旦發布就不得更動**，改了會讓既有分享連結解不出該指標（解碼端會逐項捨棄未知代碼，其餘指標照常還原）。全域唯一，只用 `[a-z0-9]`（不含編碼用的分隔字元 `|,~:`）。
 - `mount()` 才是有副作用的部分：把 `compute()` 的結果實際掛到 lightweight-charts 的 series/pane 上，回傳的 `IndicatorMountHandle` 讓呼叫端之後可以 `update()`（參數變動時重算+`series.setData()`）或 `dispose()`（移除 series，separate-pane 指標需在自己的 `dispose()` 內呼叫 `paneIndexAllocator.release()` 歸還 pane index——MA、布林通道是 overlay，不使用 `paneIndexAllocator`；MACD 是目前唯一的 separate-pane 指標，完整走過配置/歸還流程，見下方 `macd.ts` 章節）。
+- `tooltipRows?()`（chart6，選用）：交出此指標各條 series 的顯示列（`{ label, color, series }`）給滑鼠 tooltip；值不在此重算，由 tooltip 端以 `param.seriesData.get(series)` 取當日值。14 個有逐日值的指標都實作（單線帶週期標籤如 `MA20`；多線各一列如 Bollinger 三軌、MACD `DIF/DEA/MACD柱`、KD `K/D`、DMI `+DI/−DI/ADX`）；**頭底分析刻意不實作**（稀疏樞紐點＋箭頭 marker，無逐日值）。詳見 [`tooltip.md`](tooltip.md)。
 
 ## Registry（`registry.ts`）
 

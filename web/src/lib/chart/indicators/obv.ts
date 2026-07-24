@@ -72,6 +72,9 @@ function mount(
       chart.removeSeries(series);
       paneIndexAllocator.release(paneIndex);
     },
+    tooltipRows() {
+      return [{ label: 'OBV', color: series.options().color, series }];
+    },
   };
 }
 

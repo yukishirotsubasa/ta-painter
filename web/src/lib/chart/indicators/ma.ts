@@ -53,6 +53,8 @@ function mount(
   );
   series.setData(toLineData(computeMa(bars, params)));
 
+  let latestParams = params;
+
   return {
     update(nextBars, nextParams) {
       const nextSource = resolveSource(nextParams);
@@ -62,9 +64,14 @@ function mount(
         series.moveToPane(targetPane);
       }
       series.setData(toLineData(computeMa(nextBars, nextParams)));
+      latestParams = nextParams;
     },
     dispose() {
       chart.removeSeries(series);
+    },
+    tooltipRows() {
+      const period = Math.max(1, Math.round(numberParam(latestParams, 'period', DEFAULT_PERIOD)));
+      return [{ label: `MA${period}`, color: series.options().color, series }];
     },
   };
 }

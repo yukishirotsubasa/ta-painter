@@ -36,6 +36,7 @@
 | Task | 狀態 | 優先級 | 依賴 | 交付物 |
 |---|---|---|---|---|
 | [chart5](task-pool/chart5.md) | 完成 | Medium | data9 | 「使用還原價」開關（整張圖還原＋持久化＋分享 URL）；除權息垂直線標註 `VerticalLinePrimitive` |
+| [chart6](task-pool/chart6.md) | 完成 | Medium | indicator12, indicator14-23 | 滑鼠 tooltip（`tooltip.ts` `buildTooltipModel`＋`ChartContainer` overlay）：日期／OHLC 中文／成交量／各指標當日值；`IndicatorMountHandle.tooltipRows?()` 擴充 |
 
 ### symbol Module
 
@@ -110,6 +111,7 @@ RWD／行動裝置適配：斷點佈局、行動版面板、觸控手勢。
 - `../docs/sidebar.md` — 已實作設定側邊欄（覆蓋式版面與疊層順序、可折疊骨架、資料源區塊、畫線清單與選取規則）
 - `../docs/responsive.md` — 已實作 RWD 佈局（`useResponsive` 斷點、`.app` 兩列 grid 與「圖表不參與佈局切換」、桌面／行動 chrome、行動版設定覆蓋面板、指標圖例 chip 與參數小面板、精簡工具列）
 - `../docs/indicators.md` — 已實作指標架構（IndicatorDefinition/registry、MA/布林通道/MACD 指標、指標清單 UI）
+- `../docs/tooltip.md` — 已實作滑鼠 tooltip（crosshair overlay、`buildTooltipModel`、OHLC 中文化與各指標 `tooltipRows()` 曝露當日值）
 - `../docs/stock-list.md` — 已實作股票清單自動更新（來源／解析規則、有效性 gate 與重試、每週 workflow 與 Pages 串接）
 - `../docs/drawing.md` — 已實作畫線模組（TrendLinePrimitive、正式 DrawingController：模式切換、按下拖曳、多線陣列管理、切股清除、清單 API 與 `ChartHandle`）
 - `../docs/symbol-search.md` — 已實作前端代號搜尋（清單載入與快取、代號／名稱搜尋排序、送出前代號解析、ChartToolbar combobox）

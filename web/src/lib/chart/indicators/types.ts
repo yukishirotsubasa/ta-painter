@@ -1,4 +1,4 @@
-import type { IChartApi } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, SeriesType } from 'lightweight-charts';
 import type { OhlcvBar } from '../../data/types';
 
 /** enum 參數的單一可選項（value 存進 params，label 顯示於 UI）。 */
@@ -73,10 +73,29 @@ export interface PaneIndexAllocator {
   release(paneIndex: number): void;
 }
 
+/**
+ * tooltip（滑鼠指到某日彈出的資訊框）要顯示的一條指標線。
+ * 只交出 series 參考與顯示用的名稱／顏色，值本身由 tooltip 端以
+ * `param.seriesData.get(series)` 取 lightweight-charts 已算好、已對齊座標軸格式的當日值。
+ */
+export interface IndicatorTooltipRow {
+  /** 顯示名稱，含識別參數以區分同指標多實例，如 'MA20'、'布林上軌'、'DIF'。 */
+  label: string;
+  /** 色點顏色，取自該 series 目前線色，永遠反映使用者當下改過的線色。 */
+  color: string;
+  /** 值查詢用的 series 參考。 */
+  series: ISeriesApi<SeriesType>;
+}
+
 /** `mount()` 回傳的控制把手，供參數變動時更新數值、或移除指標時釋放 series/pane。 */
 export interface IndicatorMountHandle {
   update(bars: OhlcvBar[], params: IndicatorParamValues): void;
   dispose(): void;
+  /**
+   * 給 tooltip 用：回傳此指標各條 series 的顯示列。選用——未實作者（如頭底分析這種稀疏樞紐點）
+   * 不出現在 tooltip，既有型別相容。
+   */
+  tooltipRows?(): IndicatorTooltipRow[];
 }
 
 /**

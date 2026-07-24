@@ -124,6 +124,14 @@ function mount(
       chart.removeSeries(histogramSeries);
       paneIndexAllocator.release(paneIndex);
     },
+    tooltipRows() {
+      return [
+        { label: 'DIF', color: difSeries.options().color, series: difSeries },
+        { label: 'DEA', color: deaSeries.options().color, series: deaSeries },
+        // 柱體逐點漲跌分色，tooltip 端會優先採用該點顏色。
+        { label: 'MACD柱', color: UP_COLOR, series: histogramSeries },
+      ];
+    },
   };
 }
 

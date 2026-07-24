@@ -109,6 +109,12 @@ function mount(
       chart.removeSeries(dSeries);
       paneIndexAllocator.release(paneIndex);
     },
+    tooltipRows() {
+      return [
+        { label: 'K', color: kSeries.options().color, series: kSeries },
+        { label: 'D', color: dSeries.options().color, series: dSeries },
+      ];
+    },
   };
 }
 

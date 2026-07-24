@@ -78,6 +78,12 @@ function mount(
 
   setAll(bars, params);
 
+  const BAND_LABELS: Record<(typeof BANDS)[number]['key'], string> = {
+    upper: '布林上軌',
+    middle: '布林中軌',
+    lower: '布林下軌',
+  };
+
   return {
     update(nextBars, nextParams) {
       setAll(nextBars, nextParams);
@@ -86,6 +92,13 @@ function mount(
       for (const band of bands) {
         chart.removeSeries(band.series);
       }
+    },
+    tooltipRows() {
+      return bands.map((band) => ({
+        label: BAND_LABELS[band.key],
+        color: band.series.options().color,
+        series: band.series,
+      }));
     },
   };
 }

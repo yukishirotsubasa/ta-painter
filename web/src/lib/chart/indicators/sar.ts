@@ -113,6 +113,10 @@ function mount(
     dispose() {
       chart.removeSeries(series);
     },
+    tooltipRows() {
+      // 線本身隱藏、色在逐點資料上（多空分色），tooltip 端會優先採用該點顏色。
+      return [{ label: 'SAR', color: series.options().color, series }];
+    },
   };
 }
 
