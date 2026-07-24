@@ -24,10 +24,11 @@ import {
  * 精簡字串結構（欄位以 `|` 分隔，未來新欄位一律往後接，舊連結解不到就用預設值）：
  *
  * ```text
- * symbol | prov | start~end | indicator,indicator,... | line,line,...
+ * symbol | prov | start~end | indicator,indicator,... | line,line,... | adjusted?
  * ```
  *
  * - `prov`：`y`（yahoo）／`o`（official）
+ * - `adjusted`：使用還原價時為 `1`，否則整欄省略（false 連結長度與舊版一致）
  * - 日期：`YYYYMMDD`
  * - 指標：`code` 或 `code:arg~arg~...`，`code` 為 `IndicatorDefinition.urlCode`，
  *   args 依 `paramsSchema` 順序排列，等於預設值者留空、尾端連續空值直接截掉
@@ -239,15 +240,17 @@ function decodeItems<T>(field: string | undefined, decodeOne: (token: string) =>
  */
 export function encodeShareState(state: ShareState): string {
   const valid = shareStateSchema.parse(state);
-  const payload = [
+  const fields = [
     valid.symbol,
     PROVIDER_TO_CODE[valid.prov],
     `${encodeDate(valid.range.start)}${ARG_SEP}${encodeDate(valid.range.end)}`,
     valid.indicators.map(encodeIndicator).filter((token) => token !== null).join(ITEM_SEP),
     valid.lines.map(encodeLine).join(ITEM_SEP),
-  ].join(FIELD_SEP);
+  ];
+  // 只在開啟時附加第 6 欄，關閉時省略以維持與舊版相同的連結長度。
+  if (valid.useAdjusted) fields.push('1');
 
-  return compressToEncodedURIComponent(payload);
+  return compressToEncodedURIComponent(fields.join(FIELD_SEP));
 }
 
 /**
@@ -259,7 +262,7 @@ export function decodeShareState(encoded: string): ShareState | null {
     const payload = decompressFromEncodedURIComponent(encoded);
     if (!payload) return null;
 
-    const [symbol, provCode, range, indicators, lines] = payload.split(FIELD_SEP);
+    const [symbol, provCode, range, indicators, lines, adjusted] = payload.split(FIELD_SEP);
     const prov = CODE_TO_PROVIDER[provCode ?? ''];
     if (!prov) return null;
 
@@ -272,6 +275,8 @@ export function decodeShareState(encoded: string): ShareState | null {
       range: { start: decodeDate(start), end: decodeDate(end) },
       indicators: decodeItems(indicators, decodeIndicator),
       lines: decodeItems(lines, decodeLine),
+      // 舊連結無第 6 欄（undefined）→ false，向前相容。
+      useAdjusted: adjusted === '1',
     });
   } catch {
     return null;

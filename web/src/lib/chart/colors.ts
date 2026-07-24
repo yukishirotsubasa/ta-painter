@@ -29,3 +29,6 @@ export const DEFAULT_DRAWING_LINE_COLOR = '#f5a623';
  * 刻意比格線亮一點但比指標線暗，讓它讀得到又不搶戲；不開放參數調整。
  */
 export const REFERENCE_LINE_COLOR = '#5a5d6b';
+
+/** 除權息／分割日垂直標記線色（半透明金色），與漲跌紅綠、指標藍紫、手繪橙都區隔得開。 */
+export const ADJUSTMENT_LINE_COLOR = 'rgba(250, 204, 21, 0.65)';

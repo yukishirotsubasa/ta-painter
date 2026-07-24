@@ -20,6 +20,7 @@ interface PersistedSettings {
   symbol: string;              // 最後瀏覽的股票代號
   prov: ShareProvider;         // 資料源，等同 DataSource（'yahoo' | 'official'）
   indicators: ShareIndicator[];// { definitionId, params }[]
+  useAdjusted: boolean;        // 使用還原價（append-only，舊設定無此欄→預設 false），見 adjusted-price.md
 }
 
 loadSettings(): PersistedSettings | null
@@ -32,10 +33,10 @@ clearSettings(): void          // 測試用
   - `range`（查詢區間）——改由畫面寬度自動填滿，見 [data-layer.md](data-layer.md) 的「往前動態載入」。存了反而會讓下次開站固定在上次捲到的位置。
   - 畫線——經評估後決定不持久化（線與當下的分析情境綁定，跨 session 保留意義不大），要保留請用分享連結。
   - `IndicatorInstance.id`（uuid 只在本機 session 有意義，還原時重新產生）。
-- **容錯一律「整包當作沒存過」**：JSON 壞掉、schema 不符、`localStorage` 不存在都回 `null`，由呼叫端改用預設值。這裡刻意**不做逐欄容錯**——設定只有三個欄位，還原一半（例如代號還原了但指標沒有）比乾脆回預設更容易讓人誤判。
+- **容錯一律「整包當作沒存過」**：JSON 壞掉、schema 不符、`localStorage` 不存在都回 `null`，由呼叫端改用預設值。這裡刻意**不做逐欄容錯**——設定欄位很少，還原一半（例如代號還原了但指標沒有）比乾脆回預設更容易讓人誤判。`useAdjusted` 為 append-only 新欄位（`optional().default(false)`），舊版 `settings:v1` 無此欄仍能解析成功並補預設。
 - 寫入失敗（無痕模式、quota 超限）靜默略過：持久化失敗不該影響畫面，下次狀態變動會再試一次。`hasLocalStorage()` 的 try/catch 防護與 [`lib/data/cache.ts`](../web/src/lib/data/cache.ts) 同一套寫法。
 
-單元測試 `persistence.test.ts`（8 例）涵蓋：round-trip、覆寫、清除、壞 JSON、schema 不符、`localStorage` 不存在、`setItem` 丟 quota 例外。
+單元測試 `persistence.test.ts`（9 例）涵蓋：round-trip、覆寫、清除、壞 JSON、schema 不符、`localStorage` 不存在、`setItem` 丟 quota 例外、以及舊版設定無 `useAdjusted` 時補預設 `false`。
 
 ## Session 模式（`App.tsx`）
 
@@ -60,9 +61,10 @@ const [initialSettings] = useState(() => (restored ? null : loadSettings()));
 三個初始值各自套用同一條優先序（分享 → 本機 → 預設）：
 
 ```ts
-code:       restored?.symbol     ?? initialSettings?.symbol     ?? DEFAULT_STOCK_NO
-dataSource: restored?.prov       ?? initialSettings?.prov       ?? DEFAULT_DATA_SOURCE
-indicators: restored?.indicators ?? initialSettings?.indicators ?? []
+code:        restored?.symbol      ?? initialSettings?.symbol      ?? DEFAULT_STOCK_NO
+dataSource:  restored?.prov        ?? initialSettings?.prov        ?? DEFAULT_DATA_SOURCE
+indicators:  restored?.indicators  ?? initialSettings?.indicators  ?? []
+useAdjusted: restored?.useAdjusted ?? initialSettings?.useAdjusted ?? false
 ```
 
 ### 寫入時機
@@ -70,8 +72,8 @@ indicators: restored?.indicators ?? initialSettings?.indicators ?? []
 ```ts
 useEffect(() => {
   if (previewMode) return;
-  saveSettings({ symbol: stockNo, prov: dataSource, indicators: toShareIndicators(indicators) });
-}, [previewMode, stockNo, dataSource, indicators]);
+  saveSettings({ symbol: stockNo, prov: dataSource, indicators: toShareIndicators(indicators), useAdjusted });
+}, [previewMode, stockNo, dataSource, indicators, useAdjusted]);
 ```
 
 一般模式下三個值任一變動就整包覆寫（內容很小，不做 diff）。**預覽模式直接 return** —— 這一行就是整個隔離需求的實作核心：預覽期間使用者照常可以加指標、換代號、畫線，畫面完全可操作，只是不落地。
@@ -86,6 +88,7 @@ setPreviewMode(false);
 setSymbol({ code: settings?.symbol ?? DEFAULT_STOCK_NO, market: null });
 setDataSource(settings?.prov ?? DEFAULT_DATA_SOURCE);
 setIndicators(toIndicatorInstances(settings?.indicators ?? []));
+setUseAdjusted(settings?.useAdjusted ?? false);
 chartRef.current?.clearAllLines();
 window.history.replaceState(null, '', window.location.pathname + window.location.search);
 ```

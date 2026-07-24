@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChartContainer, type ChartHandle } from './components/chart/ChartContainer';
 import { ChartToolbar } from './components/chart/ChartToolbar';
 import { DrawingToolbar } from './components/chart/DrawingToolbar';
@@ -7,6 +7,7 @@ import { IndicatorPanel } from './components/chart/IndicatorPanel';
 import { DesktopLayout } from './components/layout/DesktopLayout';
 import { MobileLayout } from './components/layout/MobileLayout';
 import { ShareMenu } from './components/share/ShareMenu';
+import { AdjustedPriceToggle } from './components/sidebar/AdjustedPriceToggle';
 import { DataSourcePanel } from './components/sidebar/DataSourcePanel';
 import { DrawingListPanel } from './components/sidebar/DrawingListPanel';
 import { SidebarSection } from './components/sidebar/SidebarSection';
@@ -25,6 +26,7 @@ import {
   type DataSource,
 } from './lib/data/dataSource';
 import { classifyDataError, type DataErrorKind } from './lib/data/errors';
+import { detectAdjustmentDates, toAdjustedBars } from './lib/data/adjustment';
 import { addMonths, mergeOlderBars, previousDay } from './lib/data/history';
 import type { DateRange, FetchProgress, OhlcvBar } from './lib/data/types';
 import { screenshotFileName } from './lib/share/imageShare';
@@ -91,6 +93,10 @@ function App() {
   const [symbolName, setSymbolName] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<DataSource>(
     restored?.prov ?? initialSettings?.prov ?? DEFAULT_DATA_SOURCE,
+  );
+  // 「使用還原價」開關（分享→本機→預設 false，與 symbol/prov 一致）。
+  const [useAdjusted, setUseAdjusted] = useState(
+    restored?.useAdjusted ?? initialSettings?.useAdjusted ?? false,
   );
   /**
    * 首批查詢區間：分享連結可還原（否則取最近 QUERY_MONTHS 個月）。
@@ -190,8 +196,8 @@ function App() {
   // 這裡也不回寫 hash——網址平時保持乾淨，分享連結改由「分享URL」按鈕即時產生（見 buildShareUrl）。
   useEffect(() => {
     if (previewMode) return;
-    saveSettings({ symbol: stockNo, prov: dataSource, indicators: toShareIndicators(indicators) });
-  }, [previewMode, stockNo, dataSource, indicators]);
+    saveSettings({ symbol: stockNo, prov: dataSource, indicators: toShareIndicators(indicators), useAdjusted });
+  }, [previewMode, stockNo, dataSource, indicators, useAdjusted]);
 
   // 「分享URL」按下時才由目前狀態即時組出連結；編碼失敗（罕見）往上丟，由按鈕顯示複製失敗提示。
   const buildShareUrl = useCallback(() => {
@@ -202,10 +208,11 @@ function App() {
       range: { start: earliestLoaded, end: initialRange.end },
       indicators: toShareIndicators(indicators),
       lines: toShareLines(lines),
+      useAdjusted,
     });
     const { origin, pathname, search } = window.location;
     return `${origin}${pathname}${search}${hash}`;
-  }, [stockNo, dataSource, earliestLoaded, initialRange.end, indicators, lines]);
+  }, [stockNo, dataSource, earliestLoaded, initialRange.end, indicators, lines, useAdjusted]);
 
   // 退出預覽、回到本機設定：套回 localStorage 設定（沒有就回預設）、清掉分享線、拿掉 hash。
   const exitPreview = useCallback(() => {
@@ -214,6 +221,7 @@ function App() {
     setSymbol({ code: settings?.symbol ?? DEFAULT_STOCK_NO, market: null });
     setDataSource(settings?.prov ?? DEFAULT_DATA_SOURCE);
     setIndicators(toIndicatorInstances(settings?.indicators ?? []));
+    setUseAdjusted(settings?.useAdjusted ?? false);
     // 分享線不持久化，退出時一併清掉（若代號有變，切股本來就會清；代號相同時這行才有作用）。
     chartRef.current?.clearAllLines();
     // 拿掉 hash，重整不再回到預覽。
@@ -364,6 +372,20 @@ function App() {
       });
   }, [bars.length, dataSource, routingMarket, stockNo]);
 
+  /*
+   * 還原價衍生資料：只有 Yahoo 源有 adjClose，官方源一律不還原（開關也 disabled）。
+   * 開關開啟時把整份 bars 換成還原版本，K 線與所有指標同步套用（見 docs/… 的整張圖還原決策）。
+   * useMemo 讓 bars/開關未變時 displayBars 參考穩定，避免 reconcileIndicators 無謂重算。
+   */
+  const canAdjust = dataSource === 'yahoo';
+  const effectiveAdjusted = useAdjusted && canAdjust;
+  const displayBars = useMemo(
+    () => (effectiveAdjusted ? toAdjustedBars(bars) : bars),
+    [bars, effectiveAdjusted],
+  );
+  // 除權息／分割日一律從原始 bars 偵測（factor 跳階），兩種模式都標示。
+  const adjustmentDates = useMemo(() => detectAdjustmentDates(bars), [bars]);
+
   // 行動版工具列精簡（responsive2）：標題與欄位說明只留給輔助技術，按鈕文字縮短。
   const compact = breakpoint === 'mobile';
 
@@ -442,6 +464,8 @@ function App() {
         }}
         market={symbol.market}
       />
+      <AdjustedPriceToggle checked={useAdjusted} onChange={setUseAdjusted} disabled={dataSource === 'official'} />
+
       <SidebarSection title="指標" collapsed={indicatorSectionCollapsed} onCollapsedChange={setIndicatorSectionCollapsed}>
         <IndicatorPanel
           instances={indicators}
@@ -510,11 +534,12 @@ function App() {
         ) : (
           <ChartContainer
             ref={chartRef}
-            data={bars}
+            data={displayBars}
             indicators={indicators}
             drawingMode={drawingMode}
             drawingColor={drawingColor}
             stockNo={stockNo}
+            adjustmentDates={adjustmentDates}
             onLinesChange={handleLinesChange}
             highlightedLineId={selectedLineId}
             onNeedOlderData={loadOlderBars}

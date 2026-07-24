@@ -26,6 +26,10 @@ interface YahooChartResponse {
           close?: (number | null)[];
           volume?: (number | null)[];
         }[];
+        /** 還原收盤序列，與 timestamp/quote 同索引；`&events=div|split` 時回傳（見 fetchDaily）。 */
+        adjclose?: {
+          adjclose?: (number | null)[];
+        }[];
       };
     }[];
     error?: { code?: string; description?: string } | null;
@@ -47,6 +51,7 @@ type ChartResult = NonNullable<NonNullable<YahooChartResponse['chart']>['result'
 function resultToBars(result: ChartResult, range: DateRange): OhlcvBar[] {
   const timestamps = result.timestamp ?? [];
   const quote = result.indicators?.quote?.[0];
+  const adjclose = result.indicators?.adjclose?.[0]?.adjclose;
   const gmtOffset = result.meta?.gmtoffset ?? 0;
   if (!quote || timestamps.length === 0) {
     return [];
@@ -67,7 +72,9 @@ function resultToBars(result: ChartResult, range: DateRange): OhlcvBar[] {
     if (time < range.start || time > range.end) {
       continue;
     }
-    bars.push({ time, open, high, low, close, volume });
+    // adjclose 缺值（null／該序列不存在）時留 undefined，「使用還原價」會退回原始價。
+    const adj = adjclose?.[i];
+    bars.push({ time, open, high, low, close, volume, ...(adj == null ? {} : { adjClose: adj }) });
   }
 
   return bars.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
@@ -89,7 +96,8 @@ async function fetchDaily(
 
   let lastError = '';
   for (const suffix of SYMBOL_SUFFIXES) {
-    const upstreamPath = `${CHART_PATH}/${stockNo}${suffix}?period1=${period1}&period2=${period2}&interval=1d`;
+    // events=div|split 讓回應附帶 indicators.adjclose（還原收盤），供「使用還原價」計算還原因子。
+    const upstreamPath = `${CHART_PATH}/${stockNo}${suffix}?period1=${period1}&period2=${period2}&interval=1d&events=div|split`;
     const res = await fetch(buildProxyUrl('yahoo', upstreamPath), { signal });
     const body = (await res.json().catch(() => ({}))) as YahooChartResponse;
 

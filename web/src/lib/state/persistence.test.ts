@@ -30,6 +30,7 @@ const SETTINGS: PersistedSettings = {
     { definitionId: 'ma', params: { period: 60, source: 'close', color: '#ff0000' } },
     { definitionId: 'bb', params: {} },
   ],
+  useAdjusted: true,
 };
 
 let storage: MemoryStorage;
@@ -68,6 +69,12 @@ describe('persistence', () => {
   it('returns null on malformed JSON', () => {
     storage.setItem('settings:v1', '{not json');
     expect(loadSettings()).toBeNull();
+  });
+
+  it('defaults useAdjusted to false for legacy settings without the field', () => {
+    // 舊版 settings:v1 沒有 useAdjusted：解析成功並補預設 false，而非整包作廢。
+    storage.setItem('settings:v1', JSON.stringify({ symbol: '2330', prov: 'yahoo', indicators: [] }));
+    expect(loadSettings()).toEqual({ symbol: '2330', prov: 'yahoo', indicators: [], useAdjusted: false });
   });
 
   it('returns null when the shape fails schema validation', () => {

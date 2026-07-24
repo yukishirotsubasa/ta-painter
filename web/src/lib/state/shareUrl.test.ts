@@ -39,6 +39,7 @@ const STATE: ShareState = {
       width: 2,
     },
   ],
+  useAdjusted: false,
 };
 
 describe('readShareHash / formatShareHash', () => {
@@ -52,6 +53,11 @@ describe('readShareHash / formatShareHash', () => {
     const hash = formatShareHash(STATE);
 
     expect(readShareHash(hash.slice(1))).toEqual({ status: 'ok', state: STATE });
+  });
+
+  it('round-trips useAdjusted=true', () => {
+    const adjusted: ShareState = { ...STATE, useAdjusted: true };
+    expect(readShareHash(formatShareHash(adjusted))).toEqual({ status: 'ok', state: adjusted });
   });
 
   it('reports absent when there is no s= parameter', () => {

@@ -1,0 +1,28 @@
+.adjusted-price-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px 10px;
+}
+
+.adjusted-price-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.adjusted-price-option-disabled {
+  color: var(--text);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.adjusted-price-hint {
+  font-size: 12px;
+  line-height: 140%;
+  color: var(--accent);
+  margin: 0;
+}

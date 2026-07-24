@@ -82,6 +82,35 @@ describe('YahooProvider', () => {
     expect(upstream).toContain(`period1=${Date.parse('2024-09-01T00:00:00Z') / 1000}`);
     // period2 = end + 1 天（排他上界）
     expect(upstream).toContain(`period2=${Date.parse('2024-09-30T00:00:00Z') / 1000 + 86400}`);
+    // 需帶 events=div|split 才會回傳還原收盤（adjclose）。
+    expect(upstream).toContain('events=div|split');
+  });
+
+  it('fills adjClose from indicators.adjclose when present, leaves it undefined otherwise', async () => {
+    const withAdj = {
+      chart: {
+        error: null,
+        result: [
+          {
+            meta: { gmtoffset: 28800 },
+            timestamp: [1725238800, 1725325200],
+            indicators: {
+              quote: [{ open: [950, 948], high: [955, 952], low: [943, 939], close: [948, 940], volume: [1, 2] }],
+              // 第二根 adjclose 為 null（缺值）→ 該 bar 不帶 adjClose。
+              adjclose: [{ adjclose: [900, null] }],
+            },
+          },
+        ],
+      },
+    };
+    stubFetchBySuffix({ tw: withAdj });
+
+    const bars = await YahooProvider.fetchDaily('2330', { start: '2024-09-01', end: '2024-09-30' });
+
+    expect(bars).toEqual([
+      { time: '2024-09-02', open: 950, high: 955, low: 943, close: 948, volume: 1, adjClose: 900 },
+      { time: '2024-09-03', open: 948, high: 952, low: 939, close: 940, volume: 2 },
+    ]);
   });
 
   it('falls back to .TWO for an OTC stock when .TW returns not-found', async () => {

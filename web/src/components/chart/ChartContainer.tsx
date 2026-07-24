@@ -8,6 +8,7 @@ import {
   type IChartApi,
   type ISeriesApi,
   type LogicalRange,
+  type Time,
 } from 'lightweight-charts';
 import { createPaneIndexAllocator } from '../../lib/chart/paneIndexAllocator';
 import {
@@ -16,7 +17,9 @@ import {
   DEFAULT_DRAWING_LINE_COLOR,
   CHART_TEXT_COLOR,
   CHART_GRID_COLOR,
+  ADJUSTMENT_LINE_COLOR,
 } from '../../lib/chart/colors';
+import { VerticalLinePrimitive } from '../../lib/chart/verticalLinePrimitive';
 import { PRICE_PANE_INDEX, VOLUME_PANE_INDEX, RESERVED_PANE_COUNT } from '../../lib/chart/panes';
 import { reconcileIndicators, type MountedIndicator } from '../../lib/chart/indicators/reconcile';
 import type { IndicatorInstance, PaneIndexAllocator } from '../../lib/chart/indicators/types';
@@ -64,6 +67,8 @@ interface ChartContainerProps {
   drawingColor?: string;
   /** 股票代號，變更時清空目前所有畫線（drawing3）。 */
   stockNo?: string;
+  /** 除權息／分割日（'YYYY-MM-DD'），在主圖以貫穿全高的金色垂直虛線標記。 */
+  adjustmentDates?: string[];
   /** 線清單變動（新增／刪除／切股清除）時回報最新快照。 */
   onLinesChange?: (lines: DrawnLine[]) => void;
   /** 側邊欄目前選取的線，`null` 取消高亮。 */
@@ -102,6 +107,11 @@ function toVolumeData(bars: OhlcvBar[]): HistogramData[] {
   }));
 }
 
+/** 除權息／分割日字串轉 lightweight-charts 時間（日線一律 'YYYY-MM-DD'）。 */
+function toAdjustmentTimes(dates: string[]): Time[] {
+  return dates.map((date) => date as Time);
+}
+
 export function ChartContainer({
   ref,
   data,
@@ -109,6 +119,7 @@ export function ChartContainer({
   drawingMode = false,
   drawingColor = DEFAULT_DRAWING_LINE_COLOR,
   stockNo,
+  adjustmentDates = [],
   onLinesChange,
   highlightedLineId = null,
   onNeedOlderData,
@@ -117,6 +128,7 @@ export function ChartContainer({
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const adjustmentLinesRef = useRef<VerticalLinePrimitive | null>(null);
   const paneIndexAllocatorRef = useRef<PaneIndexAllocator | null>(null);
   const mountedIndicatorsRef = useRef<Map<string, MountedIndicator>>(new Map());
   const internalDrawingControllerRef = useRef<DrawingController | null>(null);
@@ -165,6 +177,9 @@ export function ChartContainer({
       VOLUME_PANE_INDEX,
     );
     chart.panes()[VOLUME_PANE_INDEX]?.setHeight(VOLUME_PANE_HEIGHT);
+    const adjustmentLines = new VerticalLinePrimitive({ color: ADJUSTMENT_LINE_COLOR, width: 1, label: '息' });
+    candlestickSeriesRef.current.attachPrimitive(adjustmentLines);
+    adjustmentLinesRef.current = adjustmentLines;
     const drawingController = new DrawingController({
       chart,
       series: candlestickSeriesRef.current,
@@ -195,6 +210,8 @@ export function ChartContainer({
       mountedIndicators.clear();
       drawingController.dispose();
       internalDrawingControllerRef.current = null;
+      candlestickSeriesRef.current?.detachPrimitive(adjustmentLines);
+      adjustmentLinesRef.current = null;
       chartRef.current = null;
       paneIndexAllocatorRef.current = null;
       candlestickSeriesRef.current = null;
@@ -235,6 +252,10 @@ export function ChartContainer({
 
     previousFirstTimeRef.current = nextFirstTime;
   }, [data]);
+
+  useEffect(() => {
+    adjustmentLinesRef.current?.setTimes(toAdjustmentTimes(adjustmentDates));
+  }, [adjustmentDates]);
 
   useEffect(() => {
     const chart = chartRef.current;

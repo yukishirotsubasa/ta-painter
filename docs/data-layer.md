@@ -12,6 +12,7 @@ interface OhlcvBar {
   low: number;
   close: number;
   volume: number;
+  adjClose?: number; // 還原收盤價，僅 Yahoo 源提供（見 adjusted-price.md）；官方源留 undefined
 }
 
 interface DateRange {
@@ -63,6 +64,7 @@ TPEx／Yahoo 直連會被 CORS 擋，需經 CORS proxy 轉發（見 [proxy.md](p
 - 回應 `chart.result[0]` 的 `timestamp[]`（當日開盤 09:00 的 Unix 秒）與 `indicators.quote[0]` 的 `open/high/low/close/volume[]` 對齊；用 `meta.gmtoffset`（台股 28800）把 timestamp 轉為當地日期 `YYYY-MM-DD`。
 - **null 缺值過濾**：停牌／缺值日的 OHLCV 欄位為 `null`，整列略過。
 - volume 為原始股數，不需轉換（與 TWSE 一致）。
+- **還原收盤**：請求 URL 帶 `&events=div|split`，回應才會附帶 `indicators.adjclose[0].adjclose`（除權息／分割還原後的收盤序列），與 timestamp／quote 同索引；`resultToBars` 填入 `OhlcvBar.adjClose`（該日為 null 時該 bar 不帶此欄）。用途見 [adjusted-price.md](adjusted-price.md)。
 - 進度回報：查詢成功後呼叫一次 `onProgress({ loaded: 1, total: 1 })`。
 
 ## 逐月節流查詢（`throttle.ts` — `fetchDailyRange`）

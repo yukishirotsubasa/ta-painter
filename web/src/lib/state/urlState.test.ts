@@ -22,6 +22,7 @@ const BASE_STATE: ShareState = {
   range: { start: '2024-01-01', end: '2024-06-30' },
   indicators: [],
   lines: [],
+  useAdjusted: false,
 };
 
 /** 直接組出未壓縮的精簡字串再壓縮，用來測「損壞的單一項目」。 */
@@ -62,6 +63,7 @@ describe('encodeShareState / decodeShareState round-trip', () => {
           width: 4,
         },
       ],
+      useAdjusted: false,
     };
 
     expect(decodeShareState(encodeShareState(state))).toEqual(state);
@@ -100,6 +102,11 @@ describe('compact encoding', () => {
     });
 
     expect(decodePayload(encoded)).toBe('2330|y|20240101~20240630|ma:60~v~f00,ma:~~f00|');
+  });
+
+  it('appends the adjusted flag as a 6th field only when enabled', () => {
+    expect(decodePayload(encodeShareState(BASE_STATE))).toBe('2330|y|20240101~20240630||');
+    expect(decodePayload(encodeShareState({ ...BASE_STATE, useAdjusted: true }))).toBe('2330|y|20240101~20240630|||1');
   });
 
   it('fills registry defaults back for omitted params', () => {

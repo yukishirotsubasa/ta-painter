@@ -18,12 +18,15 @@ const settingsSchema = z.object({
   /** 資料源，對應 `DataSource`。 */
   prov: shareProviderSchema,
   indicators: z.array(shareIndicatorSchema),
+  /** 「使用還原價」開關；append-only 新欄位，舊 `settings:v1` 無此欄→預設 false（parse 不失敗）。 */
+  useAdjusted: z.boolean().optional().default(false),
 });
 
 export interface PersistedSettings {
   symbol: string;
   prov: ShareProvider;
   indicators: ShareIndicator[];
+  useAdjusted: boolean;
 }
 
 /** 與 `lib/data/cache.ts` 相同的防護：無痕模式或停用儲存時存取 localStorage 會丟例外。 */

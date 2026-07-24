@@ -30,6 +30,7 @@ const shareStateSchema = z.object({
     color: /^#[0-9a-f]{6}$/,                 // 一律小寫 #rrggbb
     width: z.number().positive(),
   })),
+  useAdjusted: z.boolean().optional().default(false), // 使用還原價，見 adjusted-price.md
 });
 ```
 
@@ -45,12 +46,13 @@ const shareStateSchema = z.object({
 先把結構壓成最短的字串，再交給 `lz-string.compressToEncodedURIComponent`。先做精簡再壓縮，比直接壓 JSON 短得多。
 
 ```text
-symbol | prov | start~end | indicator,indicator,… | line,line,…
+symbol | prov | start~end | indicator,indicator,… | line,line,… | adjusted?
 ```
 
 - 分隔符：欄位 `|`、項目 `,`、項目內欄位 `~`、指標代碼與參數之間 `:`。
 - `prov`：`y`（yahoo）／`o`（official）。
 - 日期：`YYYYMMDD`（去掉 `-`）。
+- **`adjusted`（第 6 欄，使用還原價）**：開啟時為 `1`，**關閉時整欄省略**（false 連結長度與舊版一致）。舊連結無此欄→false，向前相容。見 [adjusted-price.md](adjusted-price.md)。
 - **指標**：`code` 或 `code:arg~arg~…`
   - `code` 取 `IndicatorDefinition.urlCode`（全 15 個：`ma`／`em`／`bb`／`sr`／`hb`／`md`／`kd`／`rs`／`at`／`dm`／`cc`／`wr`／`bi`／`rc`／`ob`，見 [indicators.md](indicators.md)）。這些代碼**一旦發布就不得更動**，改了會讓既有分享連結解不出該指標。
   - args **依 `paramsSchema` 的順序**排列，等於該參數 `default` 的留空，尾端連續空值直接截掉。

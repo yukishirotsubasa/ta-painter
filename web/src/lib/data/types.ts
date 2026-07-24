@@ -6,6 +6,11 @@ export interface OhlcvBar {
   low: number;
   close: number;
   volume: number;
+  /**
+   * 還原收盤價（除權息／分割還原）。目前只有 Yahoo 源提供（官方源留 undefined），
+   * 供「使用還原價」開關計算還原因子 `adjClose/close`（見 `lib/data/adjustment.ts`）。
+   */
+  adjClose?: number;
 }
 
 /** 查詢區間，start/end 皆為 'YYYY-MM-DD'（西元年），由各 provider 自行轉換為來源所需格式。 */

@@ -8,7 +8,7 @@
 >
 > 已解決的條目直接移除（實作紀錄留在 `docs/` 與 git history）；決策為**不處理**的條目壓縮到文末「已關閉（不處理）」一節，只留結論與必要的提醒。
 >
-> 現況（2026-07-24 更新）：追蹤中 8 則（皆為 Skip）、已關閉不處理 8 則。
+> 現況（2026-07-24 更新）：追蹤中 10 則（皆為 Skip）、已關閉不處理 8 則。
 
 ## 圖表色票與 CSS 變數需人工同步（`CHART_TEXT_COLOR`／`CHART_GRID_COLOR` vs `--text`／`--border`）
 
@@ -38,6 +38,7 @@
 - **現況（2026-07-24 更新，data8/share6）**：兩個任務的可測邏輯都抽成了純函式並有單元測試（`classifyDataError` 11 例），但**「錯誤分類 → 是否顯示提示」與「pending 綁定代號」的 React 接線本身仍無元件測試**：`error` state 帶 `kind` 後的條件渲染、`pendingLinesRef` 的比對與清空、hash 同步依賴 `bars` 才能即時解封——這三件都靠沙盒手測。這次的驗證手法比先前更省事，值得沿用：**用頁內 `await import('/ta-painter/src/lib/state/shareUrl.ts')` 直接叫應用自己的模組**（vite dev server 會供應原始碼模組）現場產分享連結，並以 `readShareHash(location.hash)` 反解 App 回寫的 hash 當作 `lines` state 的斷言依據，不必碰 canvas；互動則用 `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set` 繞過 React 的 value tracker 後 `form.requestSubmit()`。另記一個沙盒坑：`preview_start` 回報的 port 與 vite 實際監聽的 port 可能不同（vite 自行讓 port 時），要看 `preview_logs` 的 Local 網址，且 tab 偶爾會被彈回失效的網址，長流程最好壓成單一 `javascript_tool` 呼叫。
 - **現況（2026-07-24 更新，六項新需求）**：本輪新增的 React 接線同樣沒有元件測試，可測邏輯已照慣例抽成純函式並補上單元測試（`persistence.ts` 8 例、`history.ts` 13 例、`screenshot.ts` 標題列 10 例，全案 314 passed）。**未被涵蓋的接線**：session 模式判斷（hash → preview／normal）、持久化 effect 的「預覽模式不寫」、退出預覽的 state 重設、`ChartContainer` 的可視範圍訂閱與前插視圖校正、`loadOlderBars` 的守門與重入處理。這次的沙盒驗證手法比先前更進一步，值得沿用：**(1) stub `window.fetch` 攔截 proxy URL 回合成 K 線**，讓整條查詢／自動填滿迴圈在無外網環境下可重現，並藉由記錄每次請求的 `period1`/`period2` 直接斷言「每批嚴格更舊、無重複區間、空批次後停手」；**(2) 預先塞好 `ohlcv:{provider}:{stockNo}:{YYYY-MM}` 月快取**，讓官方源完全不經網路取得資料（區間需避開當月，當月一律視為過期）；**(3) 攔截 `navigator.clipboard.writeText`／`write`** 取得分享連結與截圖 PNG，再用 `createImageBitmap` + `getImageData` 對標題列做像素級斷言。另記一個此前未記錄的坑：**前插資料的迴圈防護不能靠 state**——`.finally()` 解鎖早於 React re-render，舊 closure 會重複請求同一段而形成迴圈，控制旗標必須用 ref 並在送出當下推進。
 - **現況（2026-07-24 更新，indicator12–23）**：新增 11 個常見指標 + 頭底分析，可測邏輯全在純函式與 `mount()` 契約（`compute()` 數值 + fake-chart，全案 440 passed）。**未被涵蓋的仍是 canvas 上的實際渲染**：頭底分析折線與頭/底標記位置、SAR 點列與多空分色、各 separate-pane 指標的線形與 price-line 參考線都只驗證了「餵給 series 的資料正確」，沒驗「畫出來長怎樣」。本輪特別記一個沙盒新坑：**即使 stub `window.fetch` 回合成 K 線、預塞月快取，這個 Browser pane 仍走不完 app 自身的資料查詢路徑**（圖表始終無 K 線、pane 為 hidden 故 canvas 不 compositing、`screenshot` timeout），因此指標的視覺回歸連「合成資料」這條路都走不通，只能靠本機 `npm run dev` 肉眼複測。指標新增下拉（indicator13）是本輪唯一的 React 接線，只有 `useState` 記選取值，無其他未測邏輯。
+- **現況（2026-07-24 更新，還原價 data9/chart5）**：新增「使用還原價」功能，可測邏輯全在純函式（`adjustment.ts` 的 `toAdjustedBars`/`detectAdjustmentDates`、`VerticalLinePrimitive` 的座標／樣式 renderer，全案 458 passed）。**未被涵蓋的 React 接線**：`AdjustedPriceToggle` 的 disabled 連動、`App` 的 `displayBars`/`adjustmentDates` `useMemo` 是否在開關切換時正確重算、`ChartContainer` 對 `VerticalLinePrimitive` 的 attach/detach 生命週期。**canvas 視覺（K 線切換還原後跳空抹平、除權息垂直線位置）同樣測不到**，理由與上一則相同（Browser pane hidden、canvas 不 compositing、`screenshot` timeout）。本輪驗證手法值得沿用：**直接在頁面 context `fetch` app 用的同一個 Yahoo proxy URL（帶 `events=div|split`）**，斷言上游確實回 `indicators.adjclose`、並用與 `detectAdjustmentDates` 相同的 factor 跳階邏輯核對除權息日數（2330 抓到 4 個，與季配息一致）——不經 canvas 就驗證了資料面。DOM 面則讀 `.adjusted-price-option input` 的 `disabled`/`checked` 與 `settings:v1.useAdjusted` 確認開關與持久化接線。
 - **建議**：加 `jsdom` + `@testing-library/react`（`vitest.config` 用 `environmentMatchGlobs` 只對元件測試切環境，避免拖慢既有純函式測試）。優先補的案例：↑/↓ 環繞、Enter 送出選取項、名稱查無時不呼叫 `onSubmit`、`stockNo` prop 變動同步輸入框、側邊欄折疊時清除選取、清單刪除呼叫 `ChartHandle.deleteLine`、`ShareMenu` 的 fallback 分支（stub 掉 `imageShare` 的能力偵測即可，不需要真的 canvas）、`upstream-blocked` 才渲染 `.app-error-hint`、pending 代號不符時不呼叫 `ChartHandle.addLine`。畫線本身（canvas 互動）即使加了 jsdom 也測不到，仍需人工。
 - **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。已明確知道缺口在哪、也已把可測邏輯盡量抽成純函式，目前選擇維持人工手測。本則**保留在清單上持續累積**——每次新增互動邏輯就更新「現況」段落，讓缺口規模保持可見，日後決定要補時有現成的優先案例清單。
 - **對應任務**：暫無（Skip）。
@@ -80,6 +81,22 @@
 - **影響**：目前三個容器已涵蓋行動版所有可點元素（實測 390×844 逐一量測通過）。但日後若新增一個不在這三個容器內的行動版 UI（例如放在圖表上的浮動按鈕、或新的覆蓋層），它不會自動獲得 44px，而且**不會有任何錯誤或警告**，只能靠人工量測發現。
 - **建議**：抽一個共用的 `.touch-target` utility class 放進 `index.css`，讓「這是觸控目標」變成明確標記而非容器繼承。現有三條規則可保留為 fallback。
 - **決策（2026-07-23）**：**Skip**，維持追蹤不排任務。現在抽是為單一使用情境過度設計。**新增行動版 UI 時的檢查點**：若新元件不在上述三個容器之內，需自行確保 ≥44px（此時就是抽 `.touch-target` 的時機）。
+- **對應任務**：暫無（Skip）。
+
+## 還原價的成交量不還原（分割時量能未同步調整）
+
+- **狀況**：`lib/data/adjustment.ts` 的 `toAdjustedBars()` 只把 factor（`adjClose/close`）套到 OHL、close 取 adjClose，**volume 維持原始值**。根因是 Yahoo 的 `adjclose` 混合了配息與分割兩種還原，其 factor 無法拆出「純分割比例」；而配息不影響成交量、只有分割才會讓歷史量能需要等比例調整。用混合 factor 去乘 volume 對配息日是錯的，因此乾脆不動。見 [`docs/adjusted-price.md`](../docs/adjusted-price.md)。
+- **影響**：純配息（台股最常見）完全正確。只有發生**股票分割**的個股，其分割日之前的還原量能會與還原價的座標尺度不一致（例如 1 拆 2 後，舊量能在還原圖上看起來只有相鄰的一半）。台股分割極罕見，實務上幾乎不會踩到。
+- **建議**：若要正確還原分割量能，需另外拿到**純分割比例**序列（Yahoo `&events=div|split` 的 `events.splits` 有 `numerator/denominator`），只對分割日的 factor 套到 volume（配息日 volume 不動）。目前 provider 未解析 `events.splits`（只用 `adjclose`），要做得先擴充 provider。
+- **決策（2026-07-24）**：**Skip**，維持追蹤不排任務。分割在台股罕見、成本效益低；真的有需求（或使用者回報分割股量能怪異）時再解析 `events.splits` 補上。
+- **對應任務**：暫無（Skip）。
+
+## 手繪趨勢線不隨「使用還原價」開關重算
+
+- **狀況**：手繪線以 time/price 邏輯座標儲存（`TrendLinePrimitive`，見 [`docs/drawing.md`](../docs/drawing.md)）。切換還原價會改變 K 線的價位尺度（除權息日之前的價格整體位移），但已畫的線仍停在原本的 price 座標，**不自動重算、也不自動清除**。刻意不清除是為了避免丟失使用者的畫線。
+- **影響**：在有除權息的個股上、且跨越除權息日的手繪線，切換開關後會與 K 棒錯開（線相對於還原後的價格「浮」在原價位）。切回原狀態即恢復吻合。純視覺錯位，不影響資料或指標。
+- **建議**：兩個方向——(1) 切換時把線的 price 端點依還原因子換算（需知道每個端點所在日期的 factor，畫線層目前不持有 bars）；(2) 切換時提示並清除跨除權息日的線。兩者都比現況複雜，且會牽動畫線層與資料層的耦合。
+- **決策（2026-07-24）**：**Skip**，維持追蹤不排任務。使用者在還原／原始之間切換時通常會重畫線；自動換算的複雜度與收益不成比例。**若日後畫線需要跨還原狀態保持吻合**，走方向 (1)。
 - **對應任務**：暫無（Skip）。
 
 ---

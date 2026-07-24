@@ -54,6 +54,11 @@ export const shareStateSchema = z.object({
   range: shareRangeSchema,
   indicators: z.array(shareIndicatorSchema),
   lines: z.array(shareLineSchema),
+  /**
+   * 「使用還原價」開關。還原價會改變指標計算結果，故須隨連結傳遞，對方才看得到相同指標線。
+   * append-only：舊連結解不到→預設 false。
+   */
+  useAdjusted: z.boolean().optional().default(false),
 });
 
 export type ShareProvider = z.infer<typeof shareProviderSchema>;
