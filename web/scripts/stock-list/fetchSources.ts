@@ -93,12 +93,51 @@ function assertNotEmpty(entries: StockListEntry[], label: string): StockListEntr
   return entries;
 }
 
+/** WAF 攔截頁全長約 800 bytes，取這個長度足以完整帶出頁面內的錯誤代碼。 */
+const PAYLOAD_HEAD_BYTES = 800;
+
+/**
+ * 上游（尤其 mopsfin）會用 HTTP 200 + text/html 回 WAF 攔截頁，內容被當成資料解析後，
+ * 錯誤訊息只剩「缺少必要欄位…實際欄位：<html>」這種誤導性的結果。
+ * 解析失敗時把回應現場印出來，才還原得了真正的失效原因。
+ */
+function describePayload(label: string, payload: FetchedPayload): string {
+  const head = new TextDecoder('utf-8').decode(payload.bytes.subarray(0, PAYLOAD_HEAD_BYTES));
+  return [
+    `${label} 回應現場：content-type=${payload.contentType} bytes=${payload.bytes.length}`,
+    `--- 開頭 ${PAYLOAD_HEAD_BYTES} bytes ---`,
+    head,
+    '--- 開頭結束 ---',
+  ].join('\n');
+}
+
+/** 成功時也留一行摘要：上游是間歇性故障，要有成功案例當對照組才判得出兩者差在哪。 */
+function logFetched(label: string, payload: FetchedPayload): void {
+  console.log(`${label} 取得：content-type=${payload.contentType} bytes=${payload.bytes.length}`);
+}
+
 export async function fetchTwseListedStocks(): Promise<StockListEntry[]> {
-  const { bytes, contentType } = await fetchBytes(TWSE_ISIN_URL, 'TWSE ISIN');
-  return assertNotEmpty(parseTwseIsinHtml(decodeBig5Bytes(bytes, contentType)), 'TWSE ISIN');
+  const payload = await fetchBytes(TWSE_ISIN_URL, 'TWSE ISIN');
+  logFetched('TWSE ISIN', payload);
+
+  try {
+    const html = decodeBig5Bytes(payload.bytes, payload.contentType);
+    return assertNotEmpty(parseTwseIsinHtml(html), 'TWSE ISIN');
+  } catch (error) {
+    console.error(describePayload('TWSE ISIN', payload));
+    throw error;
+  }
 }
 
 export async function fetchTpexListedStocks(): Promise<StockListEntry[]> {
-  const { bytes } = await fetchBytes(TPEX_MOPS_CSV_URL, 'TPEx MOPS');
-  return assertNotEmpty(parseTpexMopsCsv(new TextDecoder('utf-8').decode(bytes)), 'TPEx MOPS');
+  const payload = await fetchBytes(TPEX_MOPS_CSV_URL, 'TPEx MOPS');
+  logFetched('TPEx MOPS', payload);
+
+  try {
+    const csv = new TextDecoder('utf-8').decode(payload.bytes);
+    return assertNotEmpty(parseTpexMopsCsv(csv), 'TPEx MOPS');
+  } catch (error) {
+    console.error(describePayload('TPEx MOPS', payload));
+    throw error;
+  }
 }

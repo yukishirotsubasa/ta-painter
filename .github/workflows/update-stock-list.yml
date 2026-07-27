@@ -2,8 +2,10 @@ name: Update Stock List
 
 on:
   schedule:
-    # 每週一 04:00（台北，UTC+8）＝ 週日 20:00 UTC
-    - cron: '0 20 * * 0'
+    # 台北週日 09:23（UTC+8）＝ 週日 01:23 UTC。
+    # 選週末且刻意避開整點：UTC 整點是 GitHub 排程尖峰，會被延遲甚至略過。
+    # 排在週日也讓清單在台股週一開盤前就是最新的。失敗會有 email 通知，不必挑人在線的時段。
+    - cron: '23 1 * * 0'
   workflow_dispatch:
 
 permissions:
@@ -31,7 +33,11 @@ jobs:
       # 在 runner（server 端）抓取，無 CORS 問題、不需經 worker proxy。
       # 任一來源失敗會讓這步非零結束，後續不會 commit，等於沿用上一版清單。
       - name: Fetch stock list
-        run: node web/scripts/stock-list/main.ts
+        run: |
+          # 上游 WAF 曾用 HTTP 200 + HTML 攔截頁擋下請求，且為間歇性。
+          # 記下出口 IP 與 node 版本，成功與失敗兩次的 log 一比對就知道是否與位址／執行環境相關。
+          echo "node=$(node -v) runner-ip=$(curl -s --max-time 10 https://api.ipify.org)"
+          node web/scripts/stock-list/main.ts
 
       - name: Commit when changed
         id: commit
